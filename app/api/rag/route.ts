@@ -38,6 +38,70 @@ const FILE_TYPE_MAP: Record<string, "pdf" | "docx" | "txt"> = {
   "text/plain": "txt",
 };
 
+// GET - Health check / list documents via query param
+export async function GET(request: NextRequest) {
+  try {
+    if (!LYZR_API_KEY) {
+      return NextResponse.json(
+        { success: false, error: "LYZR_API_KEY not configured on server" },
+        { status: 500 }
+      );
+    }
+
+    const ragId = request.nextUrl.searchParams.get("ragId");
+    if (!ragId) {
+      return NextResponse.json({
+        success: true,
+        message: "RAG API is available. Provide ?ragId= to list documents.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const response = await fetch(
+      `${LYZR_RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`,
+      {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          "x-api-key": LYZR_API_KEY,
+        },
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const filePaths = Array.isArray(data)
+        ? data
+        : data.documents || data.data || [];
+
+      const documents = filePaths.map((filePath: string) => {
+        const fileName = filePath.split("/").pop() || filePath;
+        const ext = fileName.split(".").pop()?.toLowerCase() || "";
+        const fileType =
+          ext === "pdf" ? "pdf" : ext === "docx" ? "docx" : ext === "txt" ? "txt" : "unknown";
+        return { fileName, fileType, status: "active" };
+      });
+
+      return NextResponse.json({
+        success: true,
+        documents,
+        ragId,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      return NextResponse.json(
+        { success: false, error: `Failed to get documents: ${response.status}` },
+        { status: response.status }
+      );
+    }
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Server error" },
+      { status: 500 }
+    );
+  }
+}
+
 // POST - List documents (JSON body) or Upload and train (formData)
 export async function POST(request: NextRequest) {
   try {
@@ -149,27 +213,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Direct upload and train in one step
+      // Direct upload and train in one step — send only the file
+      // Do NOT send data_parser, chunk_size, chunk_overlap, or extra_info
+      // as unsupported params cause HTTP 400 from the upstream RAG API
       const trainFormData = new FormData();
       trainFormData.append("file", file, file.name);
-      trainFormData.append("data_parser", "llmsherpa");
-      trainFormData.append("chunk_size", "1000");
-      trainFormData.append("chunk_overlap", "100");
-      trainFormData.append("extra_info", "{}");
 
-      const trainResponse = await fetch(
-        `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(
-          ragId
-        )}`,
-        {
-          method: "POST",
-          headers: {
-            "x-api-key": LYZR_API_KEY,
-            accept: "application/json",
-          },
-          body: trainFormData,
-        }
-      );
+      const trainUrl = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(
+        ragId
+      )}`;
+
+      const trainResponse = await fetch(trainUrl, {
+        method: "POST",
+        headers: {
+          "x-api-key": LYZR_API_KEY,
+          accept: "application/json",
+        },
+        body: trainFormData,
+      });
 
       if (!trainResponse.ok) {
         const errorText = await trainResponse.text();
@@ -183,7 +244,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const trainData = await trainResponse.json();
+      let trainData: Record<string, unknown> = {};
+      try {
+        trainData = await trainResponse.json();
+      } catch {
+        // Response may not be JSON, continue with empty object
+      }
 
       return NextResponse.json({
         success: true,

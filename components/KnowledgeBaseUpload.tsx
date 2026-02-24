@@ -29,6 +29,7 @@ export function KnowledgeBaseUpload({
 
   const [isDragging, setIsDragging] = React.useState(false)
   const [uploadProgress, setUploadProgress] = React.useState<string | null>(null)
+  const [uploadError, setUploadError] = React.useState<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
@@ -66,22 +67,29 @@ export function KnowledgeBaseUpload({
   }
 
   const handleFileUpload = async (file: File) => {
+    setUploadError(null)
     if (!SUPPORTED_FILE_TYPES.includes(file.type as typeof SUPPORTED_FILE_TYPES[number])) {
-      alert('Unsupported file type. Please upload PDF, DOCX, or TXT files.')
+      setUploadError('Unsupported file type. Please upload PDF, DOCX, or TXT files.')
       return
     }
 
     setUploadProgress(`Uploading ${file.name}...`)
 
-    const result = await uploadDocument(ragId, file)
+    try {
+      const result = await uploadDocument(ragId, file)
 
-    if (result.success) {
+      if (result.success) {
+        setUploadProgress(null)
+        setUploadError(null)
+        await fetchDocuments(ragId)
+        onUploadSuccess?.({ documentCount: result.documentCount })
+      } else {
+        setUploadProgress(null)
+        setUploadError(result.error || 'Upload failed. Please try again.')
+      }
+    } catch {
       setUploadProgress(null)
-      await fetchDocuments(ragId)
-      onUploadSuccess?.({ documentCount: result.documentCount })
-    } else {
-      setUploadProgress(null)
-      alert(result.error || 'Upload failed')
+      setUploadError('Network error during upload. Please try again.')
     }
   }
 
@@ -93,7 +101,7 @@ export function KnowledgeBaseUpload({
     if (result.success) {
       onDeleteSuccess?.(fileName)
     } else {
-      alert(result.error || 'Delete failed')
+      setUploadError(result.error || 'Delete failed. Please try again.')
     }
   }
 
@@ -163,10 +171,10 @@ export function KnowledgeBaseUpload({
           </p>
         </div>
 
-        {/* Error Message */}
-        {error && (
+        {/* Error Messages */}
+        {(error || uploadError) && (
           <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
+            {uploadError || error}
           </div>
         )}
 
