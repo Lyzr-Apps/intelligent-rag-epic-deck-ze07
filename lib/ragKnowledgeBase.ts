@@ -83,6 +83,10 @@ export async function getDocuments(ragId: string): Promise<GetDocumentsResponse>
       body: JSON.stringify({ ragId }),
     })
 
+    if (!response || typeof response.json !== 'function') {
+      return { success: false, error: 'Failed to connect to server. Please try again.' }
+    }
+
     const data = await response.json()
     return data
   } catch (error) {
@@ -115,6 +119,10 @@ export async function uploadAndTrainDocument(ragId: string, file: File): Promise
       body: formData,
     })
 
+    if (!response || typeof response.json !== 'function') {
+      return { success: false, error: 'Upload failed. Server did not respond. Please try again.' }
+    }
+
     const data = await response.json()
     return data
   } catch (error) {
@@ -141,6 +149,10 @@ export async function deleteDocuments(
       body: JSON.stringify({ ragId, documentNames }),
     })
 
+    if (!response || typeof response.json !== 'function') {
+      return { success: false, error: 'Delete failed. Server did not respond. Please try again.' }
+    }
+
     const data = await response.json()
     return data
   } catch (error) {
@@ -163,6 +175,10 @@ export async function crawlWebsite(ragId: string, url: string): Promise<CrawlRes
       },
       body: JSON.stringify({ ragId, url }),
     })
+
+    if (!response || typeof response.json !== 'function') {
+      return { success: false, error: 'Crawl request failed. Server did not respond. Please try again.' }
+    }
 
     const data = await response.json()
     return data

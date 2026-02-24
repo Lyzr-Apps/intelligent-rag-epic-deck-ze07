@@ -441,7 +441,7 @@ function Sidebar({
             </DialogHeader>
             <KnowledgeBaseUpload
               ragId={RAG_ID}
-              onUploadSuccess={() => setShowUploadDialog(false)}
+              onUploadSuccess={() => {}}
               onDeleteSuccess={() => {}}
             />
           </DialogContent>

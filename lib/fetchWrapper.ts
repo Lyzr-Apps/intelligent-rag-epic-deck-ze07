@@ -88,6 +88,7 @@ const fetchWrapper = async (...args) => {
           404,
           requestUrl,
         );
+        return response;
       }
     } // if backend is erroring out
     else if (response.status >= 500) {
@@ -97,7 +98,8 @@ const fetchWrapper = async (...args) => {
         response.status,
         requestUrl,
       );
-      return;
+      // Still return the response so callers can handle it gracefully
+      return response;
     }
 
     return response;
@@ -109,6 +111,8 @@ const fetchWrapper = async (...args) => {
       undefined,
       requestUrl,
     );
+    // Re-throw so callers can catch and handle
+    throw error;
   }
 };
 
