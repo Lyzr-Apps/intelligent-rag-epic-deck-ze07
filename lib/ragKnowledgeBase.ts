@@ -13,6 +13,7 @@ import fetchWrapper from '@/lib/fetchWrapper'
 export const SUPPORTED_FILE_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
   'text/plain',
 ] as const
 
@@ -21,7 +22,24 @@ export type SupportedFileType = (typeof SUPPORTED_FILE_TYPES)[number]
 export const FILE_EXTENSION_MAP: Record<string, SupportedFileType> = {
   '.pdf': 'application/pdf',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
   '.txt': 'text/plain',
+}
+
+// Supported file extensions for fallback validation
+const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'doc', 'txt']
+
+/**
+ * Check if a file is supported by MIME type OR extension
+ */
+export function isFileSupportedByTypeOrExtension(file: File): boolean {
+  // Check MIME type
+  if (SUPPORTED_FILE_TYPES.includes(file.type as SupportedFileType)) {
+    return true
+  }
+  // Fallback: check file extension
+  const ext = (file.name || '').split('.').pop()?.toLowerCase() || ''
+  return SUPPORTED_EXTENSIONS.includes(ext)
 }
 
 // Types
@@ -101,11 +119,12 @@ export async function getDocuments(ragId: string): Promise<GetDocumentsResponse>
  * Upload and train a document to the knowledge base
  */
 export async function uploadAndTrainDocument(ragId: string, file: File): Promise<UploadResponse> {
-  // Validate file type
-  if (!SUPPORTED_FILE_TYPES.includes(file.type as SupportedFileType)) {
+  // Validate file type by MIME type OR extension
+  if (!isFileSupportedByTypeOrExtension(file)) {
+    const ext = (file.name || '').split('.').pop()?.toLowerCase() || 'unknown'
     return {
       success: false,
-      error: `Unsupported file type: ${file.type}. Supported: PDF, DOCX, TXT`,
+      error: `Unsupported file type: .${ext}. Supported: PDF, DOCX, TXT`,
     }
   }
 
@@ -194,7 +213,7 @@ export async function crawlWebsite(ragId: string, url: string): Promise<CrawlRes
  * Validate if a file type is supported
  */
 export function validateFile(file: File): { valid: boolean; error?: string } {
-  if (!SUPPORTED_FILE_TYPES.includes(file.type as SupportedFileType)) {
+  if (!isFileSupportedByTypeOrExtension(file)) {
     return {
       valid: false,
       error: `Unsupported file type. Supported formats: PDF, DOCX, TXT`,
@@ -204,10 +223,13 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
 }
 
 /**
- * Check if file type is supported
+ * Check if file type is supported (by MIME type or extension)
  */
-export function isFileTypeSupported(fileType: string): boolean {
-  return SUPPORTED_FILE_TYPES.includes(fileType as SupportedFileType)
+export function isFileTypeSupported(file: File | string): boolean {
+  if (typeof file === 'string') {
+    return SUPPORTED_FILE_TYPES.includes(file as SupportedFileType)
+  }
+  return isFileSupportedByTypeOrExtension(file)
 }
 
 /**

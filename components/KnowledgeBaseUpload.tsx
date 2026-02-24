@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRAGKnowledgeBase, SUPPORTED_FILE_TYPES, type RAGDocument } from '@/lib/ragKnowledgeBase'
+import { useRAGKnowledgeBase, isFileSupportedByTypeOrExtension, type RAGDocument } from '@/lib/ragKnowledgeBase'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -68,21 +68,24 @@ export function KnowledgeBaseUpload({
 
   const handleFileUpload = async (file: File) => {
     setUploadError(null)
-    if (!SUPPORTED_FILE_TYPES.includes(file.type as typeof SUPPORTED_FILE_TYPES[number])) {
-      setUploadError('Unsupported file type. Please upload PDF, DOCX, or TXT files.')
+    if (!isFileSupportedByTypeOrExtension(file)) {
+      const ext = (file.name || '').split('.').pop()?.toLowerCase() || 'unknown'
+      setUploadError(`Unsupported file type (.${ext}). Please upload PDF, DOCX, or TXT files.`)
       return
     }
 
-    setUploadProgress(`Uploading ${file.name}...`)
+    setUploadProgress(`Uploading and processing ${file.name}...`)
 
     try {
       const result = await uploadDocument(ragId, file)
 
       if (result.success) {
-        setUploadProgress(null)
+        setUploadProgress(`${file.name} uploaded successfully`)
         setUploadError(null)
         await fetchDocuments(ragId)
         onUploadSuccess?.({ documentCount: result.documentCount })
+        // Clear success message after 3 seconds
+        setTimeout(() => setUploadProgress(null), 3000)
       } else {
         setUploadProgress(null)
         setUploadError(result.error || 'Upload failed. Please try again.')
@@ -146,7 +149,7 @@ export function KnowledgeBaseUpload({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.txt"
+            accept=".pdf,.docx,.doc,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -163,12 +166,28 @@ export function KnowledgeBaseUpload({
               d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
             />
           </svg>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className={cn(
+            "mt-2 text-sm",
+            uploadProgress && uploadProgress.includes('successfully')
+              ? "text-green-600 font-medium"
+              : uploadProgress
+                ? "text-primary font-medium"
+                : "text-muted-foreground"
+          )}>
             {uploadProgress || 'Drag & drop or click to upload'}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            PDF, DOCX, TXT supported
-          </p>
+          {!uploadProgress && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              PDF, DOCX, TXT supported
+            </p>
+          )}
+          {uploadProgress && !uploadProgress.includes('successfully') && (
+            <div className="mt-2 flex justify-center">
+              <div className="h-1 w-32 rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Error Messages */}

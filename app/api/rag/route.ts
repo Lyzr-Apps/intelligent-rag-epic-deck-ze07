@@ -31,12 +31,26 @@ import { NextRequest, NextResponse } from "next/server";
 const LYZR_RAG_BASE_URL = "https://rag-prod.studio.lyzr.ai/v3";
 const LYZR_API_KEY = process.env.LYZR_API_KEY || "";
 
-const FILE_TYPE_MAP: Record<string, "pdf" | "docx" | "txt"> = {
+const MIME_TYPE_MAP: Record<string, "pdf" | "docx" | "txt"> = {
   "application/pdf": "pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    "docx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/msword": "docx",
   "text/plain": "txt",
 };
+
+function resolveFileType(file: File): "pdf" | "docx" | "txt" | null {
+  // Try MIME type first
+  const byMime = MIME_TYPE_MAP[file.type];
+  if (byMime) return byMime;
+
+  // Fallback to file extension
+  const ext = (file.name || "").split(".").pop()?.toLowerCase();
+  if (ext === "pdf") return "pdf";
+  if (ext === "docx" || ext === "doc") return "docx";
+  if (ext === "txt" || ext === "text") return "txt";
+
+  return null;
+}
 
 // GET - Health check / list documents via query param
 export async function GET(request: NextRequest) {
@@ -202,12 +216,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const fileType = FILE_TYPE_MAP[file.type];
+      const fileType = resolveFileType(file);
       if (!fileType) {
         return NextResponse.json(
           {
             success: false,
-            error: `Unsupported file type: ${file.type}. Supported: PDF, DOCX, TXT`,
+            error: `Unsupported file type: ${file.type || 'unknown'} (${file.name}). Supported: PDF, DOCX, TXT`,
           },
           { status: 400 }
         );
