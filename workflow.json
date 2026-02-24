@@ -1,0 +1,23 @@
+{
+  "agents": [
+    {
+      "name": "Document Q&A Agent",
+      "agent_id": "699da2284d9b8b973a73e350",
+      "type": "independent"
+    },
+    {
+      "name": "Study Plan Generator Agent",
+      "agent_id": "699da2297c54a9ee105c1693",
+      "type": "independent"
+    },
+    {
+      "name": "Quiz Generator Agent",
+      "agent_id": "699da2294d9b8b973a73e352",
+      "type": "independent"
+    }
+  ],
+  "knowledge_base": {
+    "rag_id": "699da1fab45a5c2df18f0f4a",
+    "name": "Learning Documents KB"
+  }
+}

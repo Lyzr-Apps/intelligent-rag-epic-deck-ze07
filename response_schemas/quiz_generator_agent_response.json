@@ -1,0 +1,46 @@
+{
+  "agent_name": "Quiz Generator Agent",
+  "agent_id": "699da2294d9b8b973a73e352",
+  "description": "Creates adaptive quizzes with MCQs, short-answer, and conceptual reasoning questions grounded in user-uploaded content with correct answers and explanations",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "quiz_title": "string",
+    "topic": "string",
+    "total_questions": "number",
+    "questions": [
+      {
+        "question_number": "number",
+        "question_type": "string",
+        "question": "string",
+        "options": [
+          "string"
+        ],
+        "correct_answer": "string",
+        "explanation": "string",
+        "difficulty": "string"
+      }
+    ],
+    "grounded_in_documents": "boolean"
+  },
+  "example_response": {
+    "quiz_title": "Title of the quiz",
+    "topic": "Quiz topic",
+    "total_questions": 0,
+    "questions": [
+      {
+        "question_number": 0,
+        "question_type": "mcq or short_answer",
+        "question": "The question text",
+        "options": [
+          "sample string"
+        ],
+        "correct_answer": "The correct answer",
+        "explanation": "Explanation of the correct answer",
+        "difficulty": "easy, medium, or hard"
+      }
+    ],
+    "grounded_in_documents": false
+  }
+}

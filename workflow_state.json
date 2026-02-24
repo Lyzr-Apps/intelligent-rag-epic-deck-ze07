@@ -1,0 +1,20 @@
+{
+  "agents": {
+    "doc_qa": {
+      "agent_id": "699da2284d9b8b973a73e350",
+      "name": "Document Q&A Agent"
+    },
+    "study_plan": {
+      "agent_id": "699da2297c54a9ee105c1693",
+      "name": "Study Plan Generator Agent"
+    },
+    "quiz": {
+      "agent_id": "699da2294d9b8b973a73e352",
+      "name": "Quiz Generator Agent"
+    }
+  },
+  "knowledge_base": {
+    "rag_id": "699da1fab45a5c2df18f0f4a",
+    "rag_name": "learningdocumentskb2tm6"
+  }
+}

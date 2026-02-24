@@ -1,0 +1,36 @@
+{
+  "agent_name": "Document Q&A Agent",
+  "agent_id": "699da2284d9b8b973a73e350",
+  "description": "Performs semantic retrieval over user-uploaded documents, generates grounded responses with citation traceability, maintains conversational memory for follow-up queries",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "answer": "string",
+    "citations": [
+      {
+        "source": "string",
+        "page": "string",
+        "excerpt": "string"
+      }
+    ],
+    "confidence": "string",
+    "follow_up_suggestions": [
+      "string"
+    ]
+  },
+  "example_response": {
+    "answer": "The grounded response to the user question with markdown formatting",
+    "citations": [
+      {
+        "source": "Document file name",
+        "page": "Page or section reference",
+        "excerpt": "Brief excerpt from the source"
+      }
+    ],
+    "confidence": "Confidence level: high, medium, or low",
+    "follow_up_suggestions": [
+      "sample string"
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "agent_name": "Study Plan Generator Agent",
+  "agent_id": "699da2297c54a9ee105c1693",
+  "description": "Generates structured multi-day study plans with topic breakdowns, practice checkpoints, and subtopic recommendations grounded in user-uploaded materials",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "title": "string",
+    "overview": "string",
+    "total_duration": "string",
+    "difficulty_level": "string",
+    "days": [
+      {
+        "day_number": "number",
+        "topic": "string",
+        "subtopics": [
+          "string"
+        ],
+        "learning_objectives": [
+          "string"
+        ],
+        "estimated_hours": "number",
+        "practice_tasks": [
+          "string"
+        ],
+        "resources": [
+          "string"
+        ]
+      }
+    ],
+    "grounded_in_documents": "boolean",
+    "tips": [
+      "string"
+    ]
+  },
+  "example_response": {
+    "title": "Study plan title",
+    "overview": "Brief overview of the study plan",
+    "total_duration": "Total duration of the plan",
+    "difficulty_level": "Overall difficulty level",
+    "days": [
+      {
+        "day_number": 0,
+        "topic": "Main topic for the day",
+        "subtopics": [
+          "sample string"
+        ],
+        "learning_objectives": [
+          "sample string"
+        ],
+        "estimated_hours": 0,
+        "practice_tasks": [
+          "sample string"
+        ],
+        "resources": [
+          "sample string"
+        ]
+      }
+    ],
+    "grounded_in_documents": false,
+    "tips": [
+      "sample string"
+    ]
+  }
+}
