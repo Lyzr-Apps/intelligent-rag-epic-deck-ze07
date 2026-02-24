@@ -11,14 +11,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-// Tabs available if needed
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Progress } from '@/components/ui/progress'
-// ScrollArea and Separator available if needed
-// import { ScrollArea } from '@/components/ui/scroll-area'
-// import { Separator } from '@/components/ui/separator'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
@@ -53,7 +48,9 @@ import {
   X,
 } from 'lucide-react'
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ============================================================================
+// CONSTANTS
+// ============================================================================
 
 const DOC_QA_AGENT_ID = '699da2284d9b8b973a73e350'
 const STUDY_PLAN_AGENT_ID = '699da2297c54a9ee105c1693'
@@ -61,12 +58,14 @@ const QUIZ_AGENT_ID = '699da2294d9b8b973a73e352'
 const RAG_ID = '699da1fab45a5c2df18f0f4a'
 
 const AGENTS = [
-  { id: DOC_QA_AGENT_ID, name: 'Document Q&A', purpose: 'Answer questions from your uploaded documents with citations' },
-  { id: STUDY_PLAN_AGENT_ID, name: 'Study Plan Generator', purpose: 'Create structured multi-day study plans from your materials' },
-  { id: QUIZ_AGENT_ID, name: 'Quiz Generator', purpose: 'Generate adaptive quizzes grounded in your uploaded content' },
+  { id: DOC_QA_AGENT_ID, name: 'Document Q&A', icon: MessageSquare, purpose: 'Answers questions from your uploaded documents with citations' },
+  { id: STUDY_PLAN_AGENT_ID, name: 'Study Planner', icon: GraduationCap, purpose: 'Creates structured multi-day study plans from your materials' },
+  { id: QUIZ_AGENT_ID, name: 'Quiz Generator', icon: HelpCircle, purpose: 'Generates adaptive quizzes grounded in your uploaded content' },
 ]
 
-// ─── TypeScript Interfaces ───────────────────────────────────────────────────
+// ============================================================================
+// INTERFACES
+// ============================================================================
 
 interface Citation {
   source?: string
@@ -126,7 +125,9 @@ interface ChatMessage {
   timestamp: string
 }
 
-// ─── localStorage Helpers ────────────────────────────────────────────────────
+// ============================================================================
+// LOCALSTORAGE HELPERS
+// ============================================================================
 
 const CHAT_STORAGE_KEY = 'learnagent_chat_history'
 const SESSION_STORAGE_KEY = 'learnagent_session_id'
@@ -148,7 +149,7 @@ function saveChatHistory(messages: ChatMessage[]) {
   try {
     localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
   } catch {
-    // localStorage full or unavailable — silently fail
+    // silently fail
   }
 }
 
@@ -185,35 +186,41 @@ function resetSessionId(): string {
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ============================================================================
+// HELPERS
+// ============================================================================
 
-function parseAgentResponse(result: AIAgentResponse, fields: string[]): Record<string, any> {
+function parseAgentResponse(result: AIAgentResponse, fields: string[]): Record<string, unknown> {
   let data = result?.response?.result
   if (typeof data === 'string') {
-    try { data = JSON.parse(data) } catch { /* keep as string */ }
+    try {
+      data = JSON.parse(data)
+    } catch {
+      // keep as string
+    }
   }
   if (data && typeof data === 'object') {
-    const hasFields = fields.some(f => f in data)
-    if (hasFields) return data
+    const hasFields = fields.some((f) => f in (data as Record<string, unknown>))
+    if (hasFields) return data as Record<string, unknown>
   }
   const unwrapKeys = ['result', 'response', 'data', 'output', 'content']
-  let current = data
+  let current = data as Record<string, unknown> | undefined
   for (let i = 0; i < 3; i++) {
     if (!current || typeof current !== 'object') break
     for (const key of unwrapKeys) {
       if (current[key] && typeof current[key] === 'object') {
-        const candidate = current[key]
-        if (fields.some(f => f in candidate)) return candidate
+        const candidate = current[key] as Record<string, unknown>
+        if (fields.some((f) => f in candidate)) return candidate
       }
     }
     for (const key of unwrapKeys) {
       if (current[key] && typeof current[key] === 'object') {
-        current = current[key]
+        current = current[key] as Record<string, unknown>
         break
       }
     }
   }
-  return data || {}
+  return (data as Record<string, unknown>) || {}
 }
 
 function formatInline(text: string): React.ReactNode {
@@ -221,7 +228,9 @@ function formatInline(text: string): React.ReactNode {
   if (parts.length === 1) return text
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <strong key={i} className="font-semibold">{part}</strong>
+      <strong key={i} className="font-semibold">
+        {part}
+      </strong>
     ) : (
       <React.Fragment key={i}>{part}</React.Fragment>
     )
@@ -231,20 +240,44 @@ function formatInline(text: string): React.ReactNode {
 function renderMarkdown(text: string): React.ReactNode {
   if (!text) return null
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {text.split('\n').map((line, i) => {
         if (line.startsWith('### '))
-          return <h4 key={i} className="font-semibold text-sm mt-3 mb-1 font-serif">{line.slice(4)}</h4>
+          return (
+            <h4 key={i} className="font-semibold text-sm mt-3 mb-1 font-serif text-foreground">
+              {line.slice(4)}
+            </h4>
+          )
         if (line.startsWith('## '))
-          return <h3 key={i} className="font-semibold text-base mt-3 mb-1 font-serif">{line.slice(3)}</h3>
+          return (
+            <h3 key={i} className="font-semibold text-base mt-3 mb-1 font-serif text-foreground">
+              {line.slice(3)}
+            </h3>
+          )
         if (line.startsWith('# '))
-          return <h2 key={i} className="font-bold text-lg mt-4 mb-2 font-serif">{line.slice(2)}</h2>
+          return (
+            <h2 key={i} className="font-bold text-lg mt-4 mb-2 font-serif text-foreground">
+              {line.slice(2)}
+            </h2>
+          )
         if (line.startsWith('- ') || line.startsWith('* '))
-          return <li key={i} className="ml-4 list-disc text-sm leading-relaxed">{formatInline(line.slice(2))}</li>
+          return (
+            <li key={i} className="ml-4 list-disc text-sm leading-relaxed text-foreground/90">
+              {formatInline(line.slice(2))}
+            </li>
+          )
         if (/^\d+\.\s/.test(line))
-          return <li key={i} className="ml-4 list-decimal text-sm leading-relaxed">{formatInline(line.replace(/^\d+\.\s/, ''))}</li>
+          return (
+            <li key={i} className="ml-4 list-decimal text-sm leading-relaxed text-foreground/90">
+              {formatInline(line.replace(/^\d+\.\s/, ''))}
+            </li>
+          )
         if (!line.trim()) return <div key={i} className="h-1" />
-        return <p key={i} className="text-sm leading-relaxed">{formatInline(line)}</p>
+        return (
+          <p key={i} className="text-sm leading-relaxed text-foreground/90">
+            {formatInline(line)}
+          </p>
+        )
       })}
     </div>
   )
@@ -266,7 +299,9 @@ function getDifficultyColor(difficulty: string): string {
   return 'bg-muted text-muted-foreground'
 }
 
-// ─── Sample Data ─────────────────────────────────────────────────────────────
+// ============================================================================
+// SAMPLE DATA
+// ============================================================================
 
 const SAMPLE_CHAT: ChatMessage[] = [
   {
@@ -278,11 +313,24 @@ const SAMPLE_CHAT: ChatMessage[] = [
     role: 'assistant',
     content: '',
     data: {
-      answer: '## Key Principles of Machine Learning\n\nBased on your uploaded documents, the main principles discussed include:\n\n### 1. Supervised Learning\nThe document covers **supervised learning** extensively, describing how models learn from labeled training data to make predictions on new, unseen data.\n\n### 2. Feature Engineering\nA significant section focuses on **feature engineering** -- the process of selecting, transforming, and creating input variables that best represent the underlying problem.\n\n### 3. Model Evaluation\nThe materials emphasize proper **model evaluation** using techniques like cross-validation, precision-recall metrics, and confusion matrices.\n\n- Always split data into training and test sets\n- Use k-fold cross-validation for robust estimates\n- Monitor for overfitting by comparing training vs validation loss',
+      answer:
+        '## Key Principles of Machine Learning\n\nBased on your uploaded documents, the main principles discussed include:\n\n### 1. Supervised Learning\nThe document covers **supervised learning** extensively, describing how models learn from labeled training data to make predictions on new, unseen data.\n\n### 2. Feature Engineering\nA significant section focuses on **feature engineering** -- the process of selecting, transforming, and creating input variables that best represent the underlying problem.\n\n### 3. Model Evaluation\nThe materials emphasize proper **model evaluation** using techniques like cross-validation, precision-recall metrics, and confusion matrices.\n\n- Always split data into training and test sets\n- Use k-fold cross-validation for robust estimates\n- Monitor for overfitting by comparing training vs validation loss',
       citations: [
-        { source: 'ML_Fundamentals.pdf', page: 'Chapter 3, p.45', excerpt: 'Supervised learning maps input features to output labels using labeled examples...' },
-        { source: 'ML_Fundamentals.pdf', page: 'Chapter 5, p.82', excerpt: 'Feature engineering is often the most impactful step in the ML pipeline...' },
-        { source: 'Advanced_Topics.pdf', page: 'Section 2.1', excerpt: 'Cross-validation provides a more reliable estimate of model performance...' },
+        {
+          source: 'ML_Fundamentals.pdf',
+          page: 'Chapter 3, p.45',
+          excerpt: 'Supervised learning maps input features to output labels using labeled examples...',
+        },
+        {
+          source: 'ML_Fundamentals.pdf',
+          page: 'Chapter 5, p.82',
+          excerpt: 'Feature engineering is often the most impactful step in the ML pipeline...',
+        },
+        {
+          source: 'Advanced_Topics.pdf',
+          page: 'Section 2.1',
+          excerpt: 'Cross-validation provides a more reliable estimate of model performance...',
+        },
       ],
       confidence: 'high',
       follow_up_suggestions: [
@@ -297,7 +345,8 @@ const SAMPLE_CHAT: ChatMessage[] = [
 
 const SAMPLE_STUDY_PLAN: StudyPlanResponse = {
   title: 'Machine Learning Fundamentals - 2 Week Study Plan',
-  overview: 'A comprehensive study plan covering the core concepts of machine learning, from foundational statistics to practical model building, grounded in your uploaded course materials.',
+  overview:
+    'A comprehensive study plan covering the core concepts of machine learning, from foundational statistics to practical model building, grounded in your uploaded course materials.',
   total_duration: '2 weeks',
   difficulty_level: 'Intermediate',
   days: [
@@ -331,7 +380,7 @@ const SAMPLE_STUDY_PLAN: StudyPlanResponse = {
   ],
   grounded_in_documents: true,
   tips: [
-    'Review each day\'s material before moving to the next topic',
+    "Review each day's material before moving to the next topic",
     'Practice coding exercises alongside theoretical reading',
     'Take notes on key formulas and concepts for quick revision',
     'Revisit difficult topics after completing the full plan',
@@ -366,7 +415,8 @@ const SAMPLE_QUIZ: QuizResponse = {
       question_type: 'short_answer',
       question: 'Explain the bias-variance tradeoff in your own words.',
       options: [],
-      correct_answer: 'The bias-variance tradeoff describes the tension between a model\'s ability to fit training data (low bias) and its ability to generalize to new data (low variance). Complex models tend to have low bias but high variance (overfitting), while simple models have high bias but low variance (underfitting).',
+      correct_answer:
+        "The bias-variance tradeoff describes the tension between a model's ability to fit training data (low bias) and its ability to generalize to new data (low variance). Complex models tend to have low bias but high variance (overfitting), while simple models have high bias but low variance (underfitting).",
       explanation: 'Understanding this tradeoff is crucial for selecting appropriate model complexity and regularization strategies.',
       difficulty: 'hard',
     },
@@ -392,12 +442,11 @@ const SAMPLE_QUIZ: QuizResponse = {
   grounded_in_documents: true,
 }
 
-// ─── ErrorBoundary ───────────────────────────────────────────────────────────
+// ============================================================================
+// ERROR BOUNDARY
+// ============================================================================
 
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error: string }
-> {
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: React.ReactNode }) {
     super(props)
     this.state = { hasError: false, error: '' }
@@ -410,11 +459,14 @@ class ErrorBoundary extends React.Component<
       return (
         <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
           <div className="text-center p-8 max-w-md">
+            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-destructive" />
+            </div>
             <h2 className="text-xl font-semibold mb-2 font-serif">Something went wrong</h2>
-            <p className="text-muted-foreground mb-4 text-sm">{this.state.error}</p>
+            <p className="text-muted-foreground mb-6 text-sm leading-relaxed">{this.state.error}</p>
             <button
               onClick={() => this.setState({ hasError: false, error: '' })}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+              className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-90"
             >
               Try again
             </button>
@@ -426,43 +478,47 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// ─── Sidebar Component ──────────────────────────────────────────────────────
+// ============================================================================
+// SIDEBAR
+// ============================================================================
 
 function Sidebar({
   activeTab,
   setActiveTab,
-  showUploadDialog,
-  setShowUploadDialog,
+  docCount,
 }: {
   activeTab: string
   setActiveTab: (tab: string) => void
-  showUploadDialog: boolean
-  setShowUploadDialog: (open: boolean) => void
+  docCount: number
 }) {
   const navItems = [
-    { id: 'chat', label: 'Chat', icon: MessageSquare },
-    { id: 'study', label: 'Study Plan', icon: GraduationCap },
-    { id: 'quiz', label: 'Quiz', icon: HelpCircle },
-    { id: 'documents', label: 'Documents', icon: FolderOpen },
+    { id: 'chat', label: 'Chat', icon: MessageSquare, desc: 'Ask questions' },
+    { id: 'study', label: 'Study Plan', icon: GraduationCap, desc: 'Create plans' },
+    { id: 'quiz', label: 'Quiz', icon: HelpCircle, desc: 'Test yourself' },
+    { id: 'documents', label: 'Documents', icon: FolderOpen, desc: `${docCount} file${docCount !== 1 ? 's' : ''}` },
   ]
 
   return (
-    <div className="w-[280px] min-h-screen bg-card border-r border-border/30 flex flex-col">
-      {/* Branding */}
-      <div className="p-6 border-b border-border/20">
+    <div className="w-[280px] min-h-screen bg-card border-r border-border/20 flex flex-col">
+      {/* Logo */}
+      <div className="p-6 pb-5">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+          <div className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
             <BookOpen className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-bold font-serif tracking-wide text-foreground">LearnAgent</h1>
-            <p className="text-xs text-muted-foreground tracking-wide">Intelligent Learning Assistant</p>
+            <h1 className="text-lg font-bold font-serif tracking-tight text-foreground">LearnAgent</h1>
+            <p className="text-[11px] text-muted-foreground tracking-wide">Intelligent Learning Assistant</p>
           </div>
         </div>
       </div>
 
+      {/* Divider */}
+      <div className="mx-4 h-px bg-border/20" />
+
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-3 pt-4 space-y-0.5">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-2">Workspace</p>
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.id
@@ -471,25 +527,37 @@ function Sidebar({
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
-                'w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200',
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 group',
                 isActive
-                  ? 'bg-primary text-primary-foreground shadow-md'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-md shadow-primary/15'
+                  : 'text-foreground/70 hover:bg-secondary/80 hover:text-foreground'
               )}
             >
-              <Icon className="w-4 h-4" />
-              <span>{item.label}</span>
+              <div
+                className={cn(
+                  'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+                  isActive ? 'bg-primary-foreground/15' : 'bg-secondary group-hover:bg-secondary'
+                )}
+              >
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="text-left">
+                <span className="font-medium block text-[13px] leading-tight">{item.label}</span>
+                <span className={cn('text-[10px] leading-tight', isActive ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+                  {item.desc}
+                </span>
+              </div>
             </button>
           )
         })}
       </nav>
 
       {/* Upload Button */}
-      <div className="p-4 border-t border-border/20">
-        <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+      <div className="px-4 pb-3">
+        <Dialog>
           <DialogTrigger asChild>
-            <Button className="w-full gap-2" variant="outline">
-              <Upload className="w-4 h-4" />
+            <Button className="w-full gap-2" variant="outline" size="sm">
+              <Upload className="w-3.5 h-3.5" />
               Upload Documents
             </Button>
           </DialogTrigger>
@@ -498,36 +566,39 @@ function Sidebar({
               <DialogTitle className="font-serif">Upload Documents</DialogTitle>
               <DialogDescription>Upload PDF, DOCX, or TXT files to your knowledge base.</DialogDescription>
             </DialogHeader>
-            <KnowledgeBaseUpload
-              ragId={RAG_ID}
-              onUploadSuccess={() => {}}
-              onDeleteSuccess={() => {}}
-            />
+            <KnowledgeBaseUpload ragId={RAG_ID} onUploadSuccess={() => {}} onDeleteSuccess={() => {}} />
           </DialogContent>
         </Dialog>
       </div>
 
       {/* Agent Status */}
-      <div className="p-4 border-t border-border/20">
-        <p className="text-xs font-medium text-muted-foreground mb-2 tracking-wide uppercase">Powered by</p>
-        <div className="space-y-1.5">
-          {AGENTS.map((agent) => (
-            <div key={agent.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
-              <span className="truncate">{agent.name}</span>
-            </div>
-          ))}
+      <div className="p-4 mx-3 mb-3 rounded-xl bg-secondary/50">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">AI Agents</p>
+        <div className="space-y-2">
+          {AGENTS.map((agent) => {
+            const Icon = agent.icon
+            return (
+              <div key={agent.id} className="flex items-center gap-2.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                <Icon className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-foreground/80 truncate">{agent.name}</p>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
   )
 }
 
-// ─── Chat Tab ────────────────────────────────────────────────────────────────
+// ============================================================================
+// CHAT TAB
+// ============================================================================
 
 function ChatTab({
   useSampleData,
-  activeAgentId,
   setActiveAgentId,
 }: {
   useSampleData: boolean
@@ -541,13 +612,12 @@ function ChatTab({
   const [sessionId, setSessionId] = useState(() => getOrCreateSessionId())
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Fetch uploaded documents to provide context in queries
   const { documents, fetchDocuments: fetchDocs } = useRAGKnowledgeBase()
   useEffect(() => {
     fetchDocs(RAG_ID)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Persist messages to localStorage whenever they change
   useEffect(() => {
     if (messages.length > 0) {
       saveChatHistory(messages)
@@ -560,7 +630,7 @@ function ChatTab({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [displayMessages])
+  }, [displayMessages, loading])
 
   const handleClearHistory = useCallback(() => {
     setMessages([])
@@ -579,18 +649,15 @@ function ChatTab({
       content: trimmed,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
-    setMessages(prev => [...prev, userMsg])
+    setMessages((prev) => [...prev, userMsg])
     setInput('')
     setLoading(true)
     setStatusMessage('')
     setActiveAgentId(DOC_QA_AGENT_ID)
 
     try {
-      // Build an enhanced prompt that includes document context for better RAG retrieval
       let enhancedMessage = trimmed
-
-      // Get current documents from the knowledge base for context
-      const docNames = documents?.map(d => d.fileName).filter(Boolean) || []
+      const docNames = documents?.map((d) => d.fileName).filter(Boolean) || []
       if (docNames.length > 0) {
         enhancedMessage = `[AVAILABLE DOCUMENTS IN KNOWLEDGE BASE: ${docNames.join(', ')}]\n\nUser Question: ${trimmed}\n\nIMPORTANT: Only cite from documents that match what the user is asking about. If the user mentions a specific document, unit, or subject name, ONLY use content from that matching document.`
       }
@@ -598,14 +665,14 @@ function ChatTab({
       const result = await callAIAgent(enhancedMessage, DOC_QA_AGENT_ID, { session_id: sessionId })
 
       if (result.success) {
-        const data = parseAgentResponse(result, ['answer', 'citations', 'confidence', 'follow_up_suggestions']) as DocQAResponse
+        const data = parseAgentResponse(result, ['answer', 'citations', 'confidence', 'follow_up_suggestions']) as unknown as DocQAResponse
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: data?.answer ?? '',
           data,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         }
-        setMessages(prev => [...prev, assistantMsg])
+        setMessages((prev) => [...prev, assistantMsg])
       } else {
         setStatusMessage(result?.error ?? 'Failed to get a response. Please try again.')
         const errorMsg: ChatMessage = {
@@ -613,7 +680,7 @@ function ChatTab({
           content: result?.response?.message ?? 'I encountered an error processing your question. Please try again.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         }
-        setMessages(prev => [...prev, errorMsg])
+        setMessages((prev) => [...prev, errorMsg])
       }
     } catch {
       setStatusMessage('Network error. Please check your connection.')
@@ -637,92 +704,112 @@ function ChatTab({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold font-serif tracking-wide">Document Q&A</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Ask questions about your uploaded documents</p>
-        </div>
-        {messages.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearHistory}
-              className="gap-1.5 text-xs"
-              disabled={loading}
-            >
-              <RotateCcw className="w-3 h-3" />
-              New Chat
-            </Button>
+      <div className="px-6 py-4 border-b border-border/15 flex items-center justify-between bg-card/40">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <MessageSquare className="w-4 h-4 text-primary" />
           </div>
-        )}
+          <div>
+            <h2 className="text-lg font-bold font-serif tracking-tight">Document Q&A</h2>
+            <p className="text-xs text-muted-foreground">Ask questions about your uploaded documents</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {messages.length > 0 && (
+            <>
+              <Badge variant="secondary" className="text-[10px] font-normal">
+                {messages.length} message{messages.length !== 1 ? 's' : ''}
+              </Badge>
+              <Button variant="ghost" size="sm" onClick={handleClearHistory} disabled={loading} className="gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <RotateCcw className="w-3 h-3" />
+                New Chat
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      {/* Messages Area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
         {displayMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-              <BookMarked className="w-8 h-8 text-primary" />
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-20 h-20 rounded-2xl bg-primary/8 flex items-center justify-center mb-5">
+              <BookMarked className="w-9 h-9 text-primary" />
             </div>
-            <h3 className="text-lg font-serif font-semibold mb-2">Start a Conversation</h3>
-            <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
-              Upload your documents and ask questions. The AI will provide grounded answers with citations from your materials.
+            <h3 className="text-xl font-serif font-bold mb-2 tracking-tight">Start a Conversation</h3>
+            <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+              Upload your study materials and ask any question. The AI will provide grounded answers with citations from your documents.
             </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {['Summarize key concepts', 'Explain a topic', 'Compare two ideas'].map((hint) => (
+                <button
+                  key={hint}
+                  onClick={() => setInput(hint)}
+                  className="text-xs px-3.5 py-2 rounded-full border border-border/40 text-muted-foreground hover:border-primary/40 hover:text-primary transition-all duration-200"
+                >
+                  {hint}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           displayMessages.map((msg, idx) => (
-            <div key={idx} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-              <div className={cn('max-w-[80%] rounded-xl px-4 py-3', msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-card border border-border/30')}>
+            <div key={idx} className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+              {msg.role === 'assistant' && (
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Brain className="w-4 h-4 text-primary" />
+                </div>
+              )}
+              <div
+                className={cn(
+                  'max-w-[75%] rounded-2xl px-4 py-3',
+                  msg.role === 'user'
+                    ? 'bg-primary text-primary-foreground rounded-br-md'
+                    : 'bg-card border border-border/25 shadow-sm rounded-bl-md'
+                )}
+              >
                 {msg.role === 'user' ? (
                   <p className="text-sm leading-relaxed">{msg.content}</p>
                 ) : (
                   <div className="space-y-3">
-                    {/* Answer */}
                     {msg.data?.answer ? (
                       <div className="text-foreground">{renderMarkdown(msg.data.answer)}</div>
                     ) : msg.content ? (
                       <div className="text-foreground">{renderMarkdown(msg.content)}</div>
                     ) : null}
 
-                    {/* Confidence Badge */}
                     {msg.data?.confidence && (
-                      <div className="flex items-center gap-2">
-                        <span className={cn('text-xs px-2 py-0.5 rounded-full border font-medium', getConfidenceColor(msg.data.confidence))}>
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className={cn('text-[10px] px-2.5 py-0.5 rounded-full border font-medium', getConfidenceColor(msg.data.confidence))}>
                           {(msg.data.confidence ?? '').charAt(0).toUpperCase() + (msg.data.confidence ?? '').slice(1)} Confidence
                         </span>
                       </div>
                     )}
 
-                    {/* Citations */}
                     {Array.isArray(msg.data?.citations) && msg.data.citations.length > 0 && (
-                      <div className="mt-2 p-3 bg-secondary/50 rounded-lg border border-border/20">
-                        <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5 uppercase tracking-wide">
-                          <FileText className="w-3 h-3" /> Referenced Sources
+                      <div className="mt-3 p-3 bg-secondary/40 rounded-xl border border-border/15">
+                        <p className="text-[10px] font-semibold text-muted-foreground mb-2 flex items-center gap-1.5 uppercase tracking-widest">
+                          <FileText className="w-3 h-3" /> Sources
                         </p>
                         <div className="space-y-2">
                           {msg.data.citations.map((cit, ci) => (
-                            <div key={ci} className="text-xs border-l-2 border-primary/40 pl-2">
-                              <span className="font-medium">{cit?.source ?? 'Unknown'}</span>
+                            <div key={ci} className="text-xs border-l-2 border-primary/30 pl-2.5 py-0.5">
+                              <span className="font-medium text-foreground">{cit?.source ?? 'Unknown'}</span>
                               {cit?.page && <span className="text-muted-foreground"> -- {cit.page}</span>}
-                              {cit?.excerpt && (
-                                <p className="text-muted-foreground mt-0.5 italic">&#34;{cit.excerpt}&#34;</p>
-                              )}
+                              {cit?.excerpt && <p className="text-muted-foreground mt-0.5 italic leading-relaxed">&quot;{cit.excerpt}&quot;</p>}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Follow-up Suggestions */}
                     {Array.isArray(msg.data?.follow_up_suggestions) && msg.data.follow_up_suggestions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex flex-wrap gap-1.5 pt-1">
                         {msg.data.follow_up_suggestions.map((sug, si) => (
                           <button
                             key={si}
                             onClick={() => handleFollowUp(sug)}
-                            className="text-xs px-3 py-1.5 rounded-full border border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-200"
+                            className="text-[11px] px-3 py-1.5 rounded-full border border-primary/25 text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-200"
                           >
                             {sug}
                           </button>
@@ -731,27 +818,37 @@ function ChatTab({
                     )}
                   </div>
                 )}
-                <p className="text-[10px] mt-1.5 opacity-60">{msg.timestamp}</p>
+                <p className={cn('text-[10px] mt-2', msg.role === 'user' ? 'text-primary-foreground/50' : 'text-muted-foreground/60')}>
+                  {msg.timestamp}
+                </p>
               </div>
+              {msg.role === 'user' && (
+                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-xs font-bold text-primary-foreground">U</span>
+                </div>
+              )}
             </div>
           ))
         )}
 
-        {/* Typing Indicator */}
+        {/* Typing indicator */}
         {loading && (
-          <div className="flex justify-start">
-            <div className="bg-card border border-border/30 rounded-xl px-4 py-3">
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Brain className="w-4 h-4 text-primary" />
+            </div>
+            <div className="bg-card border border-border/25 shadow-sm rounded-2xl rounded-bl-md px-5 py-3.5">
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" />
-                <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0.15s' }} />
-                <div className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0.3s' }} />
+                <div className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" />
+                <div className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '0.15s' }} />
+                <div className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '0.3s' }} />
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Status Message */}
+      {/* Status */}
       {statusMessage && (
         <div className="px-6 py-2">
           <p className="text-xs text-destructive flex items-center gap-1.5">
@@ -760,20 +857,22 @@ function ChatTab({
         </div>
       )}
 
-      {/* Input */}
-      <div className="px-6 py-4 border-t border-border/20">
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question about your documents..."
-            disabled={loading}
-            className="flex-1"
-          />
-          <Button onClick={handleSend} disabled={loading || !input.trim()} className="gap-1.5">
+      {/* Input Bar */}
+      <div className="px-6 py-4 border-t border-border/15 bg-card/40">
+        <div className="flex gap-2.5 items-end">
+          <div className="flex-1 relative">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question about your documents..."
+              disabled={loading}
+              className="pr-4 py-5 text-sm rounded-xl border-border/30 bg-background focus-visible:ring-primary/30"
+            />
+          </div>
+          <Button onClick={handleSend} disabled={loading || !input.trim()} size="lg" className="gap-2 rounded-xl px-5 shadow-md shadow-primary/10">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Ask
+            <span className="hidden sm:inline">Ask</span>
           </Button>
         </div>
       </div>
@@ -781,11 +880,12 @@ function ChatTab({
   )
 }
 
-// ─── Study Plan Tab ──────────────────────────────────────────────────────────
+// ============================================================================
+// STUDY PLAN TAB
+// ============================================================================
 
 function StudyPlanTab({
   useSampleData,
-  activeAgentId,
   setActiveAgentId,
 }: {
   useSampleData: boolean
@@ -816,7 +916,7 @@ function StudyPlanTab({
     try {
       const result = await callAIAgent(message, STUDY_PLAN_AGENT_ID)
       if (result.success) {
-        const data = parseAgentResponse(result, ['title', 'overview', 'days', 'total_duration', 'tips']) as StudyPlanResponse
+        const data = parseAgentResponse(result, ['title', 'overview', 'days', 'total_duration', 'tips']) as unknown as StudyPlanResponse
         setPlan(data)
       } else {
         setStatusMessage(result?.error ?? 'Failed to generate study plan.')
@@ -830,67 +930,96 @@ function StudyPlanTab({
   }, [topic, examType, duration, difficulty, loading, setActiveAgentId])
 
   const toggleTask = (taskKey: string) => {
-    setCheckedTasks(prev => ({ ...prev, [taskKey]: !prev[taskKey] }))
+    setCheckedTasks((prev) => ({ ...prev, [taskKey]: !prev[taskKey] }))
   }
 
+  // Compute progress for checked tasks
+  const totalTasks = Array.isArray(displayPlan?.days)
+    ? displayPlan.days.reduce((acc, day, dayIdx) => {
+        const tasks = Array.isArray(day?.practice_tasks) ? day.practice_tasks.length : 0
+        return acc + tasks
+      }, 0)
+    : 0
+  const completedTasks = Object.values(checkedTasks).filter(Boolean).length
+  const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20">
-        <h2 className="text-xl font-bold font-serif tracking-wide">Study Plan Generator</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Create a personalized study plan from your documents</p>
+      <div className="px-6 py-4 border-b border-border/15 flex items-center gap-3 bg-card/40">
+        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+          <GraduationCap className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold font-serif tracking-tight">Study Plan Generator</h2>
+          <p className="text-xs text-muted-foreground">Create a personalized study plan from your documents</p>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
         {/* Input Form */}
-        <Card className="border-border/30">
-          <CardContent className="pt-6 space-y-4">
+        <Card className="border-border/20 shadow-sm">
+          <CardContent className="pt-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <Label htmlFor="study-topic" className="text-sm font-medium">Topic *</Label>
+                <Label htmlFor="study-topic" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Topic *
+                </Label>
                 <Input
                   id="study-topic"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="e.g., Machine Learning Fundamentals"
-                  className="mt-1"
+                  className="mt-1.5 border-border/30"
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium">Exam Type</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Exam Type</Label>
                 <Select value={examType} onValueChange={setExamType}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1.5 border-border/30">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {['General', 'UPSC', 'GRE', 'GMAT', 'SAT', 'Custom'].map(t => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    {['General', 'UPSC', 'GRE', 'GMAT', 'SAT', 'Custom'].map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-sm font-medium">Duration</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Duration</Label>
                 <Select value={duration} onValueChange={setDuration}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1.5 border-border/30">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {['1 week', '2 weeks', '1 month', '3 months'].map(d => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    {['1 week', '2 weeks', '1 month', '3 months'].map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-sm font-medium">Difficulty Level</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Difficulty</Label>
                 <Select value={difficulty} onValueChange={setDifficulty}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1.5 border-border/30">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {['Beginner', 'Intermediate', 'Advanced'].map(d => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    {['Beginner', 'Intermediate', 'Advanced'].map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex items-end">
-                <Button onClick={handleGenerate} disabled={loading || !topic.trim()} className="w-full gap-2">
+                <Button onClick={handleGenerate} disabled={loading || !topic.trim()} className="w-full gap-2 shadow-md shadow-primary/10">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   Generate Study Plan
                 </Button>
@@ -901,17 +1030,17 @@ function StudyPlanTab({
 
         {/* Status */}
         {statusMessage && (
-          <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertCircle className="w-4 h-4" /> {statusMessage}
-          </p>
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 p-3 rounded-lg border border-destructive/15">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {statusMessage}
+          </div>
         )}
 
-        {/* Loading Skeleton */}
+        {/* Loading */}
         {loading && (
           <div className="space-y-4">
-            {[1, 2, 3].map(i => (
+            {[1, 2, 3].map((i) => (
               <div key={i} className="animate-pulse">
-                <div className="bg-muted rounded-lg h-32 w-full" />
+                <div className="bg-muted rounded-xl h-36 w-full" />
               </div>
             ))}
           </div>
@@ -919,159 +1048,164 @@ function StudyPlanTab({
 
         {/* Study Plan Display */}
         {!loading && displayPlan && (
-          <div className="space-y-6">
-            {/* Title Card */}
-            <Card className="border-border/30 bg-gradient-to-br from-card to-secondary/30">
-              <CardContent className="pt-6">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold font-serif tracking-wide">{displayPlan?.title ?? 'Study Plan'}</h3>
-                    {displayPlan?.overview && (
-                      <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">{displayPlan.overview}</p>
-                    )}
+          <div className="space-y-5">
+            {/* Title & Overview */}
+            <Card className="border-border/20 shadow-sm overflow-hidden">
+              <div className="h-1.5 bg-primary" />
+              <CardContent className="pt-5">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold font-serif tracking-tight leading-snug">{displayPlan?.title ?? 'Study Plan'}</h3>
+                    {displayPlan?.overview && <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">{displayPlan.overview}</p>}
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 flex-shrink-0">
                     {displayPlan?.total_duration && (
-                      <Badge variant="secondary" className="gap-1">
+                      <Badge variant="secondary" className="gap-1 text-xs">
                         <Clock className="w-3 h-3" /> {displayPlan.total_duration}
                       </Badge>
                     )}
                     {displayPlan?.difficulty_level && (
-                      <span className={cn('text-xs px-2 py-1 rounded-full border font-medium', getDifficultyColor(displayPlan.difficulty_level))}>
+                      <span className={cn('text-xs px-2.5 py-1 rounded-full border font-medium', getDifficultyColor(displayPlan.difficulty_level))}>
                         {displayPlan.difficulty_level}
                       </span>
                     )}
                     {displayPlan?.grounded_in_documents && (
-                      <Badge variant="outline" className="gap-1 border-green-300 text-green-700">
-                        <CheckCircle2 className="w-3 h-3" /> Grounded in Documents
+                      <Badge variant="outline" className="gap-1 border-green-300 text-green-700 text-xs">
+                        <CheckCircle2 className="w-3 h-3" /> Grounded
                       </Badge>
                     )}
                   </div>
                 </div>
+                {/* Task progress */}
+                {totalTasks > 0 && (
+                  <div className="mt-4 pt-4 border-t border-border/15">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Task Progress: {completedTasks} / {totalTasks}
+                      </span>
+                      <span className="text-xs font-semibold text-primary">{progressPercent}%</span>
+                    </div>
+                    <Progress value={progressPercent} className="h-2" />
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Day Cards Timeline */}
-            {Array.isArray(displayPlan?.days) && displayPlan.days.map((day, dayIdx) => (
-              <div key={dayIdx} className="flex gap-4">
-                {/* Timeline Line */}
-                <div className="flex flex-col items-center">
-                  <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold flex-shrink-0">
-                    {day?.day_number ?? dayIdx + 1}
-                  </div>
-                  {dayIdx < (displayPlan?.days?.length ?? 0) - 1 && (
-                    <div className="w-0.5 flex-1 bg-border/40 mt-2" />
-                  )}
-                </div>
-
-                {/* Day Content */}
-                <Card className="flex-1 border-border/30 mb-2">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base font-serif">{day?.topic ?? 'Topic'}</CardTitle>
-                      {(day?.estimated_hours ?? 0) > 0 && (
-                        <Badge variant="secondary" className="gap-1 text-xs">
-                          <Clock className="w-3 h-3" /> {day.estimated_hours}h
-                        </Badge>
-                      )}
+            {/* Day Timeline Cards */}
+            {Array.isArray(displayPlan?.days) &&
+              displayPlan.days.map((day, dayIdx) => (
+                <div key={dayIdx} className="flex gap-4">
+                  {/* Timeline dot & line */}
+                  <div className="flex flex-col items-center pt-1">
+                    <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-md shadow-primary/15">
+                      {day?.day_number ?? dayIdx + 1}
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Subtopics */}
-                    {Array.isArray(day?.subtopics) && day.subtopics.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Subtopics</p>
-                        <ul className="space-y-1">
-                          {day.subtopics.map((st, si) => (
-                            <li key={si} className="text-sm flex items-start gap-2 leading-relaxed">
-                              <ChevronRight className="w-3 h-3 mt-1 text-primary flex-shrink-0" />
-                              {st}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {dayIdx < (displayPlan?.days?.length ?? 0) - 1 && <div className="w-0.5 flex-1 bg-border/30 mt-2" />}
+                  </div>
 
-                    {/* Learning Objectives */}
-                    {Array.isArray(day?.learning_objectives) && day.learning_objectives.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                          <Target className="w-3 h-3" /> Learning Objectives
-                        </p>
-                        <ul className="space-y-1">
-                          {day.learning_objectives.map((obj, oi) => (
-                            <li key={oi} className="text-sm flex items-start gap-2 leading-relaxed">
-                              <CircleDot className="w-3 h-3 mt-1 text-accent flex-shrink-0" />
-                              {obj}
-                            </li>
-                          ))}
-                        </ul>
+                  {/* Day Card */}
+                  <Card className="flex-1 border-border/20 shadow-sm mb-1">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-base font-serif tracking-tight">{day?.topic ?? 'Topic'}</CardTitle>
+                        {(day?.estimated_hours ?? 0) > 0 && (
+                          <Badge variant="secondary" className="gap-1 text-[10px] flex-shrink-0">
+                            <Clock className="w-2.5 h-2.5" /> {day?.estimated_hours}h
+                          </Badge>
+                        )}
                       </div>
-                    )}
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-0">
+                      {/* Subtopics */}
+                      {Array.isArray(day?.subtopics) && day.subtopics.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">Subtopics</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {day.subtopics.map((st, si) => (
+                              <span key={si} className="text-xs px-2.5 py-1 rounded-full bg-secondary/70 text-secondary-foreground">
+                                {st}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                    {/* Practice Tasks */}
-                    {Array.isArray(day?.practice_tasks) && day.practice_tasks.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                          <ListChecks className="w-3 h-3" /> Practice Tasks
-                        </p>
-                        <ul className="space-y-1.5">
-                          {day.practice_tasks.map((task, ti) => {
-                            const taskKey = `${dayIdx}-${ti}`
-                            return (
-                              <li key={ti} className="text-sm flex items-start gap-2">
-                                <button
-                                  onClick={() => toggleTask(taskKey)}
-                                  className={cn(
-                                    'w-4 h-4 rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-colors',
-                                    checkedTasks[taskKey]
-                                      ? 'bg-primary border-primary text-primary-foreground'
-                                      : 'border-input hover:border-primary'
-                                  )}
-                                >
-                                  {checkedTasks[taskKey] && <Check className="w-3 h-3" />}
-                                </button>
-                                <span className={cn(checkedTasks[taskKey] && 'line-through text-muted-foreground')}>
-                                  {task}
-                                </span>
+                      {/* Learning Objectives */}
+                      {Array.isArray(day?.learning_objectives) && day.learning_objectives.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Learning Objectives
+                          </p>
+                          <ul className="space-y-1">
+                            {day.learning_objectives.map((obj, oi) => (
+                              <li key={oi} className="text-sm flex items-start gap-2 leading-relaxed text-foreground/85">
+                                <CircleDot className="w-3 h-3 mt-1 text-primary/60 flex-shrink-0" />
+                                {obj}
                               </li>
-                            )
-                          })}
-                        </ul>
-                      </div>
-                    )}
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-                    {/* Resources */}
-                    {Array.isArray(day?.resources) && day.resources.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                          <BookOpen className="w-3 h-3" /> Resources
-                        </p>
-                        <ul className="space-y-1">
-                          {day.resources.map((res, ri) => (
-                            <li key={ri} className="text-sm flex items-start gap-2 text-muted-foreground leading-relaxed">
-                              <FileText className="w-3 h-3 mt-1 flex-shrink-0" />
-                              {res}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            ))}
+                      {/* Practice Tasks */}
+                      {Array.isArray(day?.practice_tasks) && day.practice_tasks.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                            <ListChecks className="w-3 h-3" /> Practice Tasks
+                          </p>
+                          <ul className="space-y-1.5">
+                            {day.practice_tasks.map((task, ti) => {
+                              const taskKey = `${dayIdx}-${ti}`
+                              return (
+                                <li key={ti} className="text-sm flex items-start gap-2.5">
+                                  <button
+                                    onClick={() => toggleTask(taskKey)}
+                                    className={cn(
+                                      'w-[18px] h-[18px] rounded border flex-shrink-0 mt-0.5 flex items-center justify-center transition-all duration-200',
+                                      checkedTasks[taskKey] ? 'bg-primary border-primary text-primary-foreground' : 'border-input hover:border-primary/60'
+                                    )}
+                                  >
+                                    {checkedTasks[taskKey] && <Check className="w-3 h-3" />}
+                                  </button>
+                                  <span className={cn('leading-relaxed', checkedTasks[taskKey] && 'line-through text-muted-foreground')}>{task}</span>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Resources */}
+                      {Array.isArray(day?.resources) && day.resources.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                            <BookOpen className="w-3 h-3" /> Resources
+                          </p>
+                          <ul className="space-y-1">
+                            {day.resources.map((res, ri) => (
+                              <li key={ri} className="text-sm flex items-start gap-2 text-muted-foreground leading-relaxed">
+                                <FileText className="w-3 h-3 mt-1 flex-shrink-0" />
+                                {res}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              ))}
 
             {/* Tips */}
             {Array.isArray(displayPlan?.tips) && displayPlan.tips.length > 0 && (
-              <Card className="border-border/30 bg-gradient-to-br from-amber-50/50 to-card">
-                <CardContent className="pt-6">
-                  <p className="text-sm font-semibold flex items-center gap-1.5 mb-3 font-serif">
+              <Card className="border-border/20 shadow-sm bg-secondary/20">
+                <CardContent className="pt-5">
+                  <p className="text-sm font-semibold flex items-center gap-2 mb-3 font-serif">
                     <Lightbulb className="w-4 h-4 text-accent" /> Study Tips
                   </p>
                   <ul className="space-y-2">
                     {displayPlan.tips.map((tip, ti) => (
-                      <li key={ti} className="text-sm flex items-start gap-2 leading-relaxed">
+                      <li key={ti} className="text-sm flex items-start gap-2.5 leading-relaxed text-foreground/85">
                         <Star className="w-3 h-3 mt-1 text-accent flex-shrink-0" />
                         {tip}
                       </li>
@@ -1085,13 +1219,13 @@ function StudyPlanTab({
 
         {/* Empty State */}
         {!loading && !displayPlan && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-              <GraduationCap className="w-8 h-8 text-primary" />
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-primary/8 flex items-center justify-center mb-5">
+              <GraduationCap className="w-9 h-9 text-primary" />
             </div>
-            <h3 className="text-lg font-serif font-semibold mb-2">Create Your Study Plan</h3>
-            <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
-              Enter a topic and customize your preferences. The AI will generate a structured study plan grounded in your uploaded documents.
+            <h3 className="text-xl font-serif font-bold mb-2 tracking-tight">Create Your Study Plan</h3>
+            <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+              Enter a topic and customize your preferences. The AI will generate a structured day-by-day study plan grounded in your uploaded documents.
             </p>
           </div>
         )}
@@ -1100,11 +1234,12 @@ function StudyPlanTab({
   )
 }
 
-// ─── Quiz Tab ────────────────────────────────────────────────────────────────
+// ============================================================================
+// QUIZ TAB
+// ============================================================================
 
 function QuizTab({
   useSampleData,
-  activeAgentId,
   setActiveAgentId,
 }: {
   useSampleData: boolean
@@ -1141,7 +1276,7 @@ function QuizTab({
     try {
       const result = await callAIAgent(message, QUIZ_AGENT_ID)
       if (result.success) {
-        const data = parseAgentResponse(result, ['quiz_title', 'questions', 'total_questions', 'topic']) as QuizResponse
+        const data = parseAgentResponse(result, ['quiz_title', 'questions', 'total_questions', 'topic']) as unknown as QuizResponse
         setQuiz(data)
         setQuizState('taking')
       } else {
@@ -1156,12 +1291,14 @@ function QuizTab({
   }, [topic, quizType, questionCount, loading, setActiveAgentId])
 
   const currentQ = questions[currentQuestion]
-  const isMCQ = currentQ?.question_type?.toLowerCase()?.includes('mcq') || (Array.isArray(currentQ?.options) && currentQ.options.length > 0 && currentQ?.question_type !== 'short_answer')
+  const isMCQ =
+    currentQ?.question_type?.toLowerCase()?.includes('mcq') ||
+    (Array.isArray(currentQ?.options) && currentQ.options.length > 0 && currentQ?.question_type !== 'short_answer')
 
   const handleSubmitAnswer = () => {
     const answer = isMCQ ? selectedAnswer : shortAnswer
     if (!answer.trim()) return
-    setUserAnswers(prev => ({ ...prev, [currentQuestion]: answer }))
+    setUserAnswers((prev) => ({ ...prev, [currentQuestion]: answer }))
     setSubmitted(true)
   }
 
@@ -1170,7 +1307,7 @@ function QuizTab({
     setSelectedAnswer('')
     setShortAnswer('')
     if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(prev => prev + 1)
+      setCurrentQuestion((prev) => prev + 1)
     } else {
       setQuizState('results')
     }
@@ -1196,7 +1333,13 @@ function QuizTab({
     setTopic('')
   }
 
-  // Calculate score
+  const handleStartSample = () => {
+    if (useSampleData && !quiz) {
+      setQuizState('taking')
+    }
+  }
+
+  // Score calculation
   const totalAnswered = Object.keys(userAnswers).length
   const correctCount = Object.entries(userAnswers).reduce((acc, [qIdx, ans]) => {
     const q = questions[parseInt(qIdx)]
@@ -1207,55 +1350,58 @@ function QuizTab({
   }, 0)
   const scorePercent = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0
 
-  // Use sample data display
-  useEffect(() => {
-    if (useSampleData && !quiz && quizState === 'input') {
-      // Just display; user can click "Start" to enter taking mode with sample
-    }
-  }, [useSampleData, quiz, quizState])
-
-  const handleStartSample = () => {
-    if (useSampleData && !quiz) {
-      setQuizState('taking')
-    }
+  const getScoreLabel = (pct: number) => {
+    if (pct >= 90) return 'Excellent!'
+    if (pct >= 70) return 'Great job!'
+    if (pct >= 50) return 'Good effort!'
+    return 'Keep practicing!'
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20">
-        <h2 className="text-xl font-bold font-serif tracking-wide">Quiz Generator</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Test your knowledge with AI-generated quizzes</p>
+      <div className="px-6 py-4 border-b border-border/15 flex items-center justify-between bg-card/40">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <HelpCircle className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold font-serif tracking-tight">Quiz Generator</h2>
+            <p className="text-xs text-muted-foreground">Test your knowledge with AI-generated quizzes</p>
+          </div>
+        </div>
+        {quizState !== 'input' && (
+          <Button variant="ghost" size="sm" onClick={handleNewQuiz} className="gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <RotateCcw className="w-3 h-3" />
+            New Quiz
+          </Button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {/* INPUT STATE */}
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {/* ====== INPUT STATE ====== */}
         {quizState === 'input' && (
-          <div className="space-y-6">
-            <Card className="border-border/30">
-              <CardContent className="pt-6 space-y-5">
+          <div className="space-y-6 max-w-2xl mx-auto">
+            <Card className="border-border/20 shadow-sm">
+              <CardContent className="pt-5 space-y-5">
                 <div>
-                  <Label htmlFor="quiz-topic" className="text-sm font-medium">Topic *</Label>
+                  <Label htmlFor="quiz-topic" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Topic *
+                  </Label>
                   <Input
                     id="quiz-topic"
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                     placeholder="e.g., Machine Learning Basics"
-                    className="mt-1"
+                    className="mt-1.5 border-border/30"
                   />
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium mb-2 block">Quiz Type</Label>
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">Quiz Type</Label>
                   <div className="flex gap-2">
-                    {['MCQ', 'Short Answer', 'Mixed'].map(t => (
-                      <Button
-                        key={t}
-                        variant={quizType === t ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setQuizType(t)}
-                        className="flex-1"
-                      >
+                    {['MCQ', 'Short Answer', 'Mixed'].map((t) => (
+                      <Button key={t} variant={quizType === t ? 'default' : 'outline'} size="sm" onClick={() => setQuizType(t)} className="flex-1 text-xs">
                         {t}
                       </Button>
                     ))}
@@ -1263,15 +1409,17 @@ function QuizTab({
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium mb-2 block">Number of Questions: {questionCount}</Label>
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
+                    Questions: {questionCount}
+                  </Label>
                   <div className="flex gap-2">
-                    {[5, 10, 15, 20].map(n => (
+                    {[5, 10, 15, 20].map((n) => (
                       <Button
                         key={n}
                         variant={questionCount === n ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setQuestionCount(n)}
-                        className="flex-1"
+                        className="flex-1 text-xs"
                       >
                         {n}
                       </Button>
@@ -1279,7 +1427,7 @@ function QuizTab({
                   </div>
                 </div>
 
-                <Button onClick={handleGenerate} disabled={loading || !topic.trim()} className="w-full gap-2">
+                <Button onClick={handleGenerate} disabled={loading || !topic.trim()} className="w-full gap-2 shadow-md shadow-primary/10">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
                   Generate Quiz
                 </Button>
@@ -1287,41 +1435,42 @@ function QuizTab({
             </Card>
 
             {statusMessage && (
-              <p className="text-sm text-destructive flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4" /> {statusMessage}
-              </p>
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 p-3 rounded-lg border border-destructive/15">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {statusMessage}
+              </div>
             )}
 
             {loading && (
               <div className="space-y-4">
-                {[1, 2].map(i => (
+                {[1, 2].map((i) => (
                   <div key={i} className="animate-pulse">
-                    <div className="bg-muted rounded-lg h-24 w-full" />
+                    <div className="bg-muted rounded-xl h-28 w-full" />
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Sample Data Preview */}
+            {/* Sample Preview */}
             {useSampleData && !quiz && !loading && (
-              <Card className="border-border/30">
-                <CardHeader>
+              <Card className="border-border/20 shadow-sm overflow-hidden">
+                <div className="h-1 bg-primary" />
+                <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle className="font-serif">{SAMPLE_QUIZ?.quiz_title ?? 'Sample Quiz'}</CardTitle>
-                      <CardDescription className="mt-1">
+                      <CardTitle className="font-serif text-base">{SAMPLE_QUIZ?.quiz_title ?? 'Sample Quiz'}</CardTitle>
+                      <CardDescription className="mt-0.5 text-xs">
                         {SAMPLE_QUIZ?.topic ?? ''} -- {SAMPLE_QUIZ?.total_questions ?? 0} questions
                       </CardDescription>
                     </div>
                     {SAMPLE_QUIZ?.grounded_in_documents && (
-                      <Badge variant="outline" className="gap-1 border-green-300 text-green-700">
+                      <Badge variant="outline" className="gap-1 border-green-300 text-green-700 text-xs">
                         <CheckCircle2 className="w-3 h-3" /> Grounded
                       </Badge>
                     )}
                   </div>
                 </CardHeader>
-                <CardFooter>
-                  <Button onClick={handleStartSample} className="gap-2">
+                <CardFooter className="pt-0">
+                  <Button onClick={handleStartSample} className="gap-2 shadow-md shadow-primary/10">
                     <ArrowRight className="w-4 h-4" /> Start Sample Quiz
                   </Button>
                 </CardFooter>
@@ -1331,11 +1480,11 @@ function QuizTab({
             {/* Empty State */}
             {!useSampleData && !loading && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                  <HelpCircle className="w-8 h-8 text-primary" />
+                <div className="w-20 h-20 rounded-2xl bg-primary/8 flex items-center justify-center mb-5">
+                  <HelpCircle className="w-9 h-9 text-primary" />
                 </div>
-                <h3 className="text-lg font-serif font-semibold mb-2">Create a Quiz</h3>
-                <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
+                <h3 className="text-xl font-serif font-bold mb-2 tracking-tight">Create a Quiz</h3>
+                <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
                   Choose a topic and quiz preferences. The AI will generate questions grounded in your uploaded documents.
                 </p>
               </div>
@@ -1343,17 +1492,17 @@ function QuizTab({
           </div>
         )}
 
-        {/* TAKING QUIZ STATE */}
+        {/* ====== TAKING STATE ====== */}
         {quizState === 'taking' && questions.length > 0 && currentQ && (
-          <div className="space-y-6 max-w-2xl mx-auto">
-            {/* Quiz Header */}
+          <div className="space-y-5 max-w-2xl mx-auto">
+            {/* Progress Header */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   Question {currentQuestion + 1} of {questions.length}
-                </h3>
+                </span>
                 {currentQ?.difficulty && (
-                  <span className={cn('text-xs px-2 py-0.5 rounded-full border font-medium', getDifficultyColor(currentQ.difficulty))}>
+                  <span className={cn('text-[10px] px-2.5 py-0.5 rounded-full border font-medium', getDifficultyColor(currentQ.difficulty))}>
                     {currentQ.difficulty}
                   </span>
                 )}
@@ -1362,13 +1511,18 @@ function QuizTab({
             </div>
 
             {/* Question Card */}
-            <Card className="border-border/30">
+            <Card className="border-border/20 shadow-sm">
               <CardContent className="pt-6 space-y-5">
-                <p className="text-base font-medium leading-relaxed">{currentQ?.question ?? ''}</p>
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs font-bold text-primary">{(currentQ?.question_number ?? currentQuestion + 1)}</span>
+                  </div>
+                  <p className="text-[15px] font-medium leading-relaxed flex-1">{currentQ?.question ?? ''}</p>
+                </div>
 
                 {/* MCQ Options */}
                 {isMCQ && Array.isArray(currentQ?.options) && currentQ.options.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 pl-11">
                     {currentQ.options.map((opt, oi) => {
                       const letter = String.fromCharCode(65 + oi)
                       const isSelected = selectedAnswer === opt
@@ -1381,24 +1535,26 @@ function QuizTab({
                           onClick={() => !submitted && setSelectedAnswer(opt ?? '')}
                           disabled={submitted}
                           className={cn(
-                            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left text-sm transition-all duration-200',
-                            !submitted && isSelected && 'border-primary bg-primary/5',
-                            !submitted && !isSelected && 'border-border/40 hover:border-primary/50',
-                            isCorrect && 'border-green-500 bg-green-50',
-                            isWrong && 'border-red-500 bg-red-50',
-                            submitted && !isCorrect && !isWrong && 'opacity-50'
+                            'w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left text-sm transition-all duration-200',
+                            !submitted && isSelected && 'border-primary bg-primary/5 shadow-sm',
+                            !submitted && !isSelected && 'border-border/30 hover:border-primary/40 hover:bg-secondary/30',
+                            isCorrect && 'border-green-500 bg-green-50 shadow-sm',
+                            isWrong && 'border-red-500 bg-red-50 shadow-sm',
+                            submitted && !isCorrect && !isWrong && 'opacity-40'
                           )}
                         >
-                          <span className={cn(
-                            'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border',
-                            !submitted && isSelected && 'bg-primary text-primary-foreground border-primary',
-                            !submitted && !isSelected && 'bg-secondary border-border/40',
-                            isCorrect && 'bg-green-500 text-white border-green-500',
-                            isWrong && 'bg-red-500 text-white border-red-500'
-                          )}>
+                          <span
+                            className={cn(
+                              'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border transition-colors',
+                              !submitted && isSelected && 'bg-primary text-primary-foreground border-primary',
+                              !submitted && !isSelected && 'bg-secondary/50 border-border/30',
+                              isCorrect && 'bg-green-500 text-white border-green-500',
+                              isWrong && 'bg-red-500 text-white border-red-500'
+                            )}
+                          >
                             {submitted && isCorrect ? <Check className="w-3.5 h-3.5" /> : submitted && isWrong ? <X className="w-3.5 h-3.5" /> : letter}
                           </span>
-                          <span>{opt}</span>
+                          <span className="leading-relaxed">{opt}</span>
                         </button>
                       )
                     })}
@@ -1407,86 +1563,94 @@ function QuizTab({
 
                 {/* Short Answer */}
                 {!isMCQ && (
-                  <Textarea
-                    value={shortAnswer}
-                    onChange={(e) => setShortAnswer(e.target.value)}
-                    placeholder="Type your answer here..."
-                    rows={4}
-                    disabled={submitted}
-                  />
-                )}
-
-                {/* Submit / Explanation */}
-                {!submitted ? (
-                  <Button
-                    onClick={handleSubmitAnswer}
-                    disabled={isMCQ ? !selectedAnswer : !shortAnswer.trim()}
-                    className="w-full gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Submit Answer
-                  </Button>
-                ) : (
-                  <div className="space-y-3">
-                    {/* Correct Answer */}
-                    <div className="p-3 bg-secondary/50 rounded-lg border border-border/20">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Correct Answer</p>
-                      <p className="text-sm font-medium">{currentQ?.correct_answer ?? ''}</p>
-                    </div>
-
-                    {/* Explanation */}
-                    {currentQ?.explanation && (
-                      <div className="p-3 bg-secondary/50 rounded-lg border border-border/20">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
-                          <Lightbulb className="w-3 h-3" /> Explanation
-                        </p>
-                        <p className="text-sm leading-relaxed">{currentQ.explanation}</p>
-                      </div>
-                    )}
-
-                    <Button onClick={handleNextQuestion} className="w-full gap-2">
-                      {currentQuestion < questions.length - 1 ? (
-                        <><ArrowRight className="w-4 h-4" /> Next Question</>
-                      ) : (
-                        <><Trophy className="w-4 h-4" /> View Results</>
-                      )}
-                    </Button>
+                  <div className="pl-11">
+                    <Textarea
+                      value={shortAnswer}
+                      onChange={(e) => setShortAnswer(e.target.value)}
+                      placeholder="Type your answer here..."
+                      rows={4}
+                      disabled={submitted}
+                      className="border-border/30"
+                    />
                   </div>
                 )}
+
+                {/* Submit / Feedback */}
+                <div className="pl-11">
+                  {!submitted ? (
+                    <Button onClick={handleSubmitAnswer} disabled={isMCQ ? !selectedAnswer : !shortAnswer.trim()} className="w-full gap-2 shadow-md shadow-primary/10">
+                      <CheckCircle2 className="w-4 h-4" /> Submit Answer
+                    </Button>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="p-3.5 bg-secondary/40 rounded-xl border border-border/15">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Correct Answer</p>
+                        <p className="text-sm font-medium text-foreground">{currentQ?.correct_answer ?? ''}</p>
+                      </div>
+
+                      {currentQ?.explanation && (
+                        <div className="p-3.5 bg-secondary/40 rounded-xl border border-border/15">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1">
+                            <Lightbulb className="w-3 h-3 text-accent" /> Explanation
+                          </p>
+                          <p className="text-sm leading-relaxed text-foreground/85">{currentQ.explanation}</p>
+                        </div>
+                      )}
+
+                      <Button onClick={handleNextQuestion} className="w-full gap-2 shadow-md shadow-primary/10">
+                        {currentQuestion < questions.length - 1 ? (
+                          <>
+                            <ArrowRight className="w-4 h-4" /> Next Question
+                          </>
+                        ) : (
+                          <>
+                            <Trophy className="w-4 h-4" /> View Results
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* RESULTS STATE */}
+        {/* ====== RESULTS STATE ====== */}
         {quizState === 'results' && (
           <div className="space-y-6 max-w-2xl mx-auto">
-            {/* Score Card */}
-            <Card className="border-border/30 bg-gradient-to-br from-card to-secondary/30">
-              <CardContent className="pt-6 text-center">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                  <Trophy className="w-10 h-10 text-primary" />
+            {/* Score */}
+            <Card className="border-border/20 shadow-sm overflow-hidden">
+              <div className="h-1.5 bg-primary" />
+              <CardContent className="pt-8 pb-8 text-center">
+                <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5">
+                  <Trophy className="w-12 h-12 text-primary" />
                 </div>
-                <h3 className="text-2xl font-bold font-serif">{correctCount} / {totalAnswered}</h3>
+                <p className="text-sm font-medium text-muted-foreground mb-1">{getScoreLabel(scorePercent)}</p>
+                <h3 className="text-3xl font-bold font-serif tracking-tight">
+                  {correctCount} / {totalAnswered}
+                </h3>
                 <p className="text-muted-foreground text-sm mt-1">Questions answered correctly</p>
-                <div className="mt-4">
-                  <Progress value={scorePercent} className="h-3 max-w-xs mx-auto" />
-                  <p className="text-lg font-bold mt-2">{scorePercent}%</p>
+                <div className="mt-5 max-w-xs mx-auto">
+                  <Progress value={scorePercent} className="h-3" />
+                  <p className="text-xl font-bold mt-2 text-primary">{scorePercent}%</p>
                 </div>
-                <div className="flex gap-3 justify-center mt-6">
+                <div className="flex gap-3 justify-center mt-7">
                   <Button variant="outline" onClick={handleRetake} className="gap-1.5">
-                    <RotateCcw className="w-4 h-4" /> Retake Quiz
+                    <RotateCcw className="w-4 h-4" /> Retake
                   </Button>
-                  <Button onClick={handleNewQuiz} className="gap-1.5">
+                  <Button onClick={handleNewQuiz} className="gap-1.5 shadow-md shadow-primary/10">
                     <Brain className="w-4 h-4" /> New Quiz
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Per-question Review */}
-            <Card className="border-border/30">
-              <CardHeader>
+            {/* Review */}
+            <Card className="border-border/20 shadow-sm">
+              <CardHeader className="pb-2">
                 <CardTitle className="text-base font-serif">Question Review</CardTitle>
+                <CardDescription className="text-xs">Review your answers and learn from the explanations</CardDescription>
               </CardHeader>
               <CardContent>
                 <Accordion type="single" collapsible className="w-full">
@@ -1498,18 +1662,20 @@ function QuizTab({
 
                     return (
                       <AccordionItem key={qi} value={`q-${qi}`}>
-                        <AccordionTrigger className="text-sm">
-                          <div className="flex items-center gap-2 text-left">
+                        <AccordionTrigger className="text-sm hover:no-underline">
+                          <div className="flex items-center gap-2.5 text-left">
                             {isCorrect ? (
                               <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
                             ) : (
                               <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                             )}
-                            <span className="line-clamp-1">Q{(q?.question_number ?? qi + 1)}: {q?.question ?? ''}</span>
+                            <span className="line-clamp-1">
+                              Q{q?.question_number ?? qi + 1}: {q?.question ?? ''}
+                            </span>
                           </div>
                         </AccordionTrigger>
                         <AccordionContent>
-                          <div className="space-y-2 pl-6 text-sm">
+                          <div className="space-y-2 pl-7 text-sm">
                             <div>
                               <span className="text-muted-foreground">Your answer: </span>
                               <span className={cn('font-medium', isCorrect ? 'text-green-700' : 'text-red-600')}>{userAns || 'Not answered'}</span>
@@ -1519,9 +1685,7 @@ function QuizTab({
                               <span className="font-medium text-green-700">{q?.correct_answer ?? ''}</span>
                             </div>
                             {q?.explanation && (
-                              <div className="p-2 bg-secondary/50 rounded text-muted-foreground mt-1">
-                                {q.explanation}
-                              </div>
+                              <div className="p-2.5 bg-secondary/40 rounded-lg text-muted-foreground mt-1.5 text-xs leading-relaxed">{q.explanation}</div>
                             )}
                           </div>
                         </AccordionContent>
@@ -1538,24 +1702,34 @@ function QuizTab({
   )
 }
 
-// ─── Documents Tab ───────────────────────────────────────────────────────────
+// ============================================================================
+// DOCUMENTS TAB
+// ============================================================================
 
-function DocumentsTab() {
+function DocumentsTab({ onDocCountChange }: { onDocCountChange: (count: number) => void }) {
   const { documents, loading, error, fetchDocuments } = useRAGKnowledgeBase()
   const [refreshing, setRefreshing] = useState(false)
+  const [showUploadDialog, setShowUploadDialog] = useState(false)
 
   useEffect(() => {
     fetchDocuments(RAG_ID)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Multi-stage refresh to handle indexing lag
+  useEffect(() => {
+    onDocCountChange(Array.isArray(documents) ? documents.length : 0)
+  }, [documents, onDocCountChange])
+
   const refreshWithRetries = useCallback(async () => {
     setRefreshing(true)
     await fetchDocuments(RAG_ID)
-    // Retry at intervals to catch indexing lag
-    setTimeout(async () => { await fetchDocuments(RAG_ID) }, 2000)
-    setTimeout(async () => { await fetchDocuments(RAG_ID); setRefreshing(false) }, 5000)
+    setTimeout(async () => {
+      await fetchDocuments(RAG_ID)
+    }, 2000)
+    setTimeout(async () => {
+      await fetchDocuments(RAG_ID)
+      setRefreshing(false)
+    }, 5000)
   }, [fetchDocuments])
 
   const handleManualRefresh = useCallback(async () => {
@@ -1564,95 +1738,141 @@ function DocumentsTab() {
     setRefreshing(false)
   }, [fetchDocuments])
 
-  const getFileTypeIcon = (fileType: string) => {
+  const getFileTypeLabel = (fileType: string) => {
     switch (fileType) {
-      case 'pdf': return 'PDF'
-      case 'docx': return 'DOCX'
-      case 'txt': return 'TXT'
-      default: return 'FILE'
+      case 'pdf':
+        return 'PDF'
+      case 'docx':
+        return 'DOCX'
+      case 'txt':
+        return 'TXT'
+      default:
+        return 'FILE'
     }
   }
 
   const getFileTypeBg = (fileType: string) => {
     switch (fileType) {
-      case 'pdf': return 'bg-red-100 text-red-700'
-      case 'docx': return 'bg-blue-100 text-blue-700'
-      case 'txt': return 'bg-gray-100 text-gray-700'
-      default: return 'bg-muted text-muted-foreground'
+      case 'pdf':
+        return 'bg-red-100 text-red-700'
+      case 'docx':
+        return 'bg-blue-100 text-blue-700'
+      case 'txt':
+        return 'bg-gray-100 text-gray-700'
+      default:
+        return 'bg-muted text-muted-foreground'
     }
   }
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold font-serif tracking-wide">Document Library</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage your knowledge base documents</p>
+      <div className="px-6 py-4 border-b border-border/15 flex items-center justify-between bg-card/40">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <FolderOpen className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold font-serif tracking-tight">Document Library</h2>
+            <p className="text-xs text-muted-foreground">Manage your knowledge base documents</p>
+          </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleManualRefresh}
-          disabled={loading || refreshing}
-          className="gap-1.5 text-xs"
-        >
-          <RotateCcw className={cn('w-3 h-3', (loading || refreshing) && 'animate-spin')} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={handleManualRefresh} disabled={loading || refreshing} className="gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <RotateCcw className={cn('w-3 h-3', (loading || refreshing) && 'animate-spin')} />
+            Refresh
+          </Button>
+          <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-1.5 text-xs shadow-md shadow-primary/10">
+                <Upload className="w-3 h-3" />
+                Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-serif">Upload Documents</DialogTitle>
+                <DialogDescription>Upload PDF, DOCX, or TXT files to your knowledge base for AI analysis.</DialogDescription>
+              </DialogHeader>
+              <KnowledgeBaseUpload
+                ragId={RAG_ID}
+                onUploadSuccess={() => {
+                  refreshWithRetries()
+                  setShowUploadDialog(false)
+                }}
+                onDeleteSuccess={() => {
+                  refreshWithRetries()
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-        {/* Upload Zone */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        {/* Inline Upload */}
         <KnowledgeBaseUpload
           ragId={RAG_ID}
-          onUploadSuccess={() => { refreshWithRetries() }}
-          onDeleteSuccess={() => { refreshWithRetries() }}
+          onUploadSuccess={() => {
+            refreshWithRetries()
+          }}
+          onDeleteSuccess={() => {
+            refreshWithRetries()
+          }}
         />
 
         {/* Error */}
         {error && (
-          <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertCircle className="w-4 h-4" /> {error}
-          </p>
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 p-3 rounded-lg border border-destructive/15">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+          </div>
         )}
 
-        {/* Documents Grid */}
+        {/* Loading skeletons */}
         {loading && !documents && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => (
+            {[1, 2, 3].map((i) => (
               <div key={i} className="animate-pulse">
-                <div className="bg-muted rounded-lg h-28" />
+                <div className="bg-muted rounded-xl h-28" />
               </div>
             ))}
           </div>
         )}
 
+        {/* Documents Grid */}
         {Array.isArray(documents) && documents.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-              {documents.length} Document{documents.length !== 1 ? 's' : ''} in Library
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                {documents.length} Document{documents.length !== 1 ? 's' : ''} in Library
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {documents.map((doc: RAGDocument) => (
-                <Card key={doc.fileName} className="border-border/30 hover:shadow-md transition-shadow duration-200">
-                  <CardContent className="pt-5">
+                <Card
+                  key={doc.fileName}
+                  className="border-border/20 shadow-sm hover:shadow-md transition-all duration-200 hover:border-border/40"
+                >
+                  <CardContent className="pt-4 pb-4">
                     <div className="flex items-start gap-3">
-                      <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0', getFileTypeBg(doc.fileType))}>
-                        {getFileTypeIcon(doc.fileType)}
+                      <div
+                        className={cn(
+                          'w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0 tracking-wider',
+                          getFileTypeBg(doc.fileType)
+                        )}
+                      >
+                        {getFileTypeLabel(doc.fileType)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{doc.fileName}</p>
+                        <p className="text-sm font-medium truncate leading-snug">{doc.fileName}</p>
                         <div className="flex items-center gap-2 mt-1.5">
                           {doc?.status && (
-                            <Badge variant={doc.status === 'active' ? 'default' : 'secondary'} className="text-[10px] h-5">
-                              {doc.status === 'active' ? <CheckCircle2 className="w-2.5 h-2.5 mr-1" /> : null}
+                            <Badge variant={doc.status === 'active' ? 'default' : 'secondary'} className="text-[9px] h-5 font-normal">
+                              {doc.status === 'active' ? <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> : null}
                               {doc.status}
                             </Badge>
                           )}
-                          {(doc?.documentCount ?? 0) > 0 && (
-                            <span className="text-[10px] text-muted-foreground">{doc.documentCount} chunks</span>
-                          )}
+                          {(doc?.documentCount ?? 0) > 0 && <span className="text-[10px] text-muted-foreground">{doc.documentCount} chunks</span>}
                         </div>
                       </div>
                     </div>
@@ -1663,13 +1883,14 @@ function DocumentsTab() {
           </div>
         )}
 
+        {/* Empty State */}
         {Array.isArray(documents) && documents.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-              <FolderOpen className="w-8 h-8 text-primary" />
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-primary/8 flex items-center justify-center mb-5">
+              <FolderOpen className="w-9 h-9 text-primary" />
             </div>
-            <h3 className="text-lg font-serif font-semibold mb-2">No Documents Yet</h3>
-            <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
+            <h3 className="text-xl font-serif font-bold mb-2 tracking-tight">No Documents Yet</h3>
+            <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
               Upload your first document to get started. The AI will use your documents to answer questions, create study plans, and generate quizzes.
             </p>
           </div>
@@ -1679,73 +1900,57 @@ function DocumentsTab() {
   )
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ============================================================================
+// MAIN PAGE
+// ============================================================================
 
 export default function Page() {
   const [activeTab, setActiveTab] = useState('chat')
   const [useSampleData, setUseSampleData] = useState(false)
-  const [showUploadDialog, setShowUploadDialog] = useState(false)
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
+  const [docCount, setDocCount] = useState(0)
+
+  const handleDocCountChange = useCallback((count: number) => {
+    setDocCount(count)
+  }, [])
 
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-background text-foreground flex">
         {/* Sidebar */}
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          showUploadDialog={showUploadDialog}
-          setShowUploadDialog={setShowUploadDialog}
-        />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} docCount={docCount} />
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-h-screen">
+        <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
           {/* Top Bar */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-border/20 bg-card/50">
-            <div className="flex items-center gap-2">
-              {activeAgentId && (
+          <div className="flex items-center justify-between px-6 py-2.5 border-b border-border/15 bg-card/30">
+            <div className="flex items-center gap-2 min-w-0">
+              {activeAgentId ? (
+                <div className="flex items-center gap-2 text-xs text-primary bg-primary/5 px-3 py-1.5 rounded-full border border-primary/15">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span className="font-medium">{AGENTS.find((a) => a.id === activeAgentId)?.name ?? 'Agent'} is working...</span>
+                </div>
+              ) : (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                  <span>
-                    {AGENTS.find(a => a.id === activeAgentId)?.name ?? 'Agent'} is working...
-                  </span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Ready</span>
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="sample-toggle" className="text-xs text-muted-foreground cursor-pointer">Sample Data</Label>
-              <Switch
-                id="sample-toggle"
-                checked={useSampleData}
-                onCheckedChange={setUseSampleData}
-              />
+            <div className="flex items-center gap-2.5">
+              <Label htmlFor="sample-toggle" className="text-[11px] text-muted-foreground cursor-pointer select-none">
+                Sample Data
+              </Label>
+              <Switch id="sample-toggle" checked={useSampleData} onCheckedChange={setUseSampleData} />
             </div>
           </div>
 
           {/* Tab Content */}
           <div className="flex-1 overflow-hidden">
-            {activeTab === 'chat' && (
-              <ChatTab
-                useSampleData={useSampleData}
-                activeAgentId={activeAgentId}
-                setActiveAgentId={setActiveAgentId}
-              />
-            )}
-            {activeTab === 'study' && (
-              <StudyPlanTab
-                useSampleData={useSampleData}
-                activeAgentId={activeAgentId}
-                setActiveAgentId={setActiveAgentId}
-              />
-            )}
-            {activeTab === 'quiz' && (
-              <QuizTab
-                useSampleData={useSampleData}
-                activeAgentId={activeAgentId}
-                setActiveAgentId={setActiveAgentId}
-              />
-            )}
-            {activeTab === 'documents' && <DocumentsTab />}
+            {activeTab === 'chat' && <ChatTab useSampleData={useSampleData} activeAgentId={activeAgentId} setActiveAgentId={setActiveAgentId} />}
+            {activeTab === 'study' && <StudyPlanTab useSampleData={useSampleData} activeAgentId={activeAgentId} setActiveAgentId={setActiveAgentId} />}
+            {activeTab === 'quiz' && <QuizTab useSampleData={useSampleData} activeAgentId={activeAgentId} setActiveAgentId={setActiveAgentId} />}
+            {activeTab === 'documents' && <DocumentsTab onDocCountChange={handleDocCountChange} />}
           </div>
         </div>
       </div>

@@ -1,68 +1,219 @@
 /**
  * Server-side RAG Knowledge Base API Route
  *
- * This route proxies requests to the Lyzr RAG API v3 (https://rag-prod.studio.lyzr.ai)
- * Full API spec: https://rag-prod.studio.lyzr.ai/docs
+ * Proxies requests to the Lyzr RAG API v3 (https://rag-prod.studio.lyzr.ai)
  *
- * CRITICAL API SPECIFICATIONS:
+ * Operations:
+ *   GET    - Health check or list documents (?ragId=xxx)
+ *   POST   - List documents (JSON { ragId }) or upload/train (FormData with ragId + file)
+ *   PATCH  - Crawl a website into a knowledge base
+ *   DELETE - Remove documents from a knowledge base
  *
- * 1. POST /api/rag (JSON body { ragId })  →  GET /v3/rag/documents/{rag_id}/
- *    - Content-Type: application/json
- *    - Lists documents in a knowledge base
- *    - Headers: x-api-key
- *
- * 2. POST /api/rag (formData with file)  →  POST /v3/train/{fileType}/?rag_id={id}
- *    - Content-Type: multipart/form-data
- *    - rag_id in QUERY parameter
- *    - fileType (pdf|docx|txt) in URL PATH
- *    - Body: multipart/form-data (file + parser params)
- *    - Headers: x-api-key
- *
- * 3. DELETE /api/rag (with JSON)  →  DELETE /v3/rag/{rag_id}/docs/
- *    - rag_id in URL PATH
- *    - Body: JSON array of filenames
- *    - Headers: x-api-key, Content-Type: application/json
- *
- * NEVER expose LYZR_API_KEY to client — always proxy through this route.
+ * NEVER expose LYZR_API_KEY to the client -- always proxy through this route.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
-const LYZR_RAG_BASE_URL = "https://rag-prod.studio.lyzr.ai/v3";
-const LYZR_API_KEY = process.env.LYZR_API_KEY || "";
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-const MIME_TYPE_MAP: Record<string, "pdf" | "docx" | "txt"> = {
+const RAG_BASE_URL = "https://rag-prod.studio.lyzr.ai/v3";
+const CRAWL_URL = "https://api.beta.architect.new/api/v1/rag/crawl";
+
+/**
+ * Read the API key lazily so tests / hot-reloads always pick up the latest
+ * value from the environment.
+ */
+function getApiKey(): string {
+  return process.env.LYZR_API_KEY ?? "";
+}
+
+// ---------------------------------------------------------------------------
+// File-type resolution
+// ---------------------------------------------------------------------------
+
+type SupportedFileType = "pdf" | "docx" | "txt";
+
+const MIME_TO_FILE_TYPE: Record<string, SupportedFileType> = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/msword": "docx",
   "text/plain": "txt",
 };
 
-function resolveFileType(file: File): "pdf" | "docx" | "txt" | null {
-  // Try MIME type first
-  const byMime = MIME_TYPE_MAP[file.type];
-  if (byMime) return byMime;
+const EXTENSION_TO_FILE_TYPE: Record<string, SupportedFileType> = {
+  pdf: "pdf",
+  docx: "docx",
+  doc: "docx",
+  txt: "txt",
+  text: "txt",
+};
 
-  // Fallback to file extension
-  const ext = (file.name || "").split(".").pop()?.toLowerCase();
-  if (ext === "pdf") return "pdf";
-  if (ext === "docx" || ext === "doc") return "docx";
-  if (ext === "txt" || ext === "text") return "txt";
+/**
+ * Determine the file type from MIME type first, then fall back to extension.
+ */
+function resolveFileType(file: File): SupportedFileType | null {
+  // 1. MIME type takes priority
+  if (file.type && MIME_TO_FILE_TYPE[file.type]) {
+    return MIME_TO_FILE_TYPE[file.type];
+  }
+
+  // 2. Extension fallback
+  const ext = (file.name ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (ext && EXTENSION_TO_FILE_TYPE[ext]) {
+    return EXTENSION_TO_FILE_TYPE[ext];
+  }
 
   return null;
 }
 
-// GET - Health check / list documents via query param
-export async function GET(request: NextRequest) {
-  try {
-    if (!LYZR_API_KEY) {
-      return NextResponse.json(
-        { success: false, error: "LYZR_API_KEY not configured on server" },
-        { status: 500 }
-      );
+// ---------------------------------------------------------------------------
+// Document-list helpers
+// ---------------------------------------------------------------------------
+
+interface ParsedDocument {
+  fileName: string;
+  fileType: string;
+  status: string;
+}
+
+/**
+ * Parse the raw response from the Lyzr documents endpoint into a uniform
+ * array of `ParsedDocument` objects.  The API returns an array of file-path
+ * strings such as `["storage/voicestream-dev-guide.pdf"]`.
+ */
+function parseDocumentList(raw: unknown): ParsedDocument[] {
+  const paths: string[] = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as Record<string, unknown>)?.documents)
+      ? (raw as Record<string, unknown>).documents as string[]
+      : Array.isArray((raw as Record<string, unknown>)?.data)
+        ? (raw as Record<string, unknown>).data as string[]
+        : [];
+
+  return paths.map((filePath: string) => {
+    const fileName = filePath.split("/").pop() || filePath;
+    const ext = fileName.split(".").pop()?.toLowerCase() || "";
+    let fileType: string;
+    switch (ext) {
+      case "pdf":
+        fileType = "pdf";
+        break;
+      case "docx":
+      case "doc":
+        fileType = "docx";
+        break;
+      case "txt":
+      case "text":
+        fileType = "txt";
+        break;
+      default:
+        fileType = "unknown";
     }
+    return { fileName, fileType, status: "active" };
+  });
+}
+
+/**
+ * Fetch the document list for a given `ragId` from the Lyzr API.
+ * Returns `{ ok, documents, raw, status }`.
+ */
+async function fetchDocumentList(
+  ragId: string,
+  apiKey: string,
+): Promise<{
+  ok: boolean;
+  documents: ParsedDocument[];
+  count: number;
+  status: number;
+  errorText?: string;
+}> {
+  const url = `${RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        "x-api-key": apiKey,
+      },
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      documents: [],
+      count: 0,
+      status: 502,
+      errorText: `Network error contacting RAG API: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unable to read error body");
+    return { ok: false, documents: [], count: 0, status: response.status, errorText };
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return {
+      ok: false,
+      documents: [],
+      count: 0,
+      status: 502,
+      errorText: "RAG API returned non-JSON response when listing documents",
+    };
+  }
+
+  const documents = parseDocumentList(data);
+  return { ok: true, documents, count: documents.length, status: 200 };
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function missingKeyResponse(): NextResponse {
+  return NextResponse.json(
+    { success: false, error: "LYZR_API_KEY is not configured on the server" },
+    { status: 500 },
+  );
+}
+
+function errorResponse(
+  message: string,
+  status: number,
+  details?: string,
+): NextResponse {
+  const body: Record<string, unknown> = { success: false, error: message };
+  if (details) {
+    body.details = details;
+  }
+  return NextResponse.json(body, { status });
+}
+
+/**
+ * Promise-based delay.
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// GET  --  Health check or list documents via ?ragId=xxx
+// ---------------------------------------------------------------------------
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) return missingKeyResponse();
 
     const ragId = request.nextUrl.searchParams.get("ragId");
+
+    // Health check when no ragId is supplied
     if (!ragId) {
       return NextResponse.json({
         success: true,
@@ -71,399 +222,429 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const response = await fetch(
-      `${LYZR_RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`,
-      {
-        method: "GET",
-        headers: {
-          accept: "application/json",
-          "x-api-key": LYZR_API_KEY,
-        },
-      }
-    );
+    const result = await fetchDocumentList(ragId, apiKey);
 
-    if (response.ok) {
-      const data = await response.json();
-      const filePaths = Array.isArray(data)
-        ? data
-        : data.documents || data.data || [];
-
-      const documents = filePaths.map((filePath: string) => {
-        const fileName = filePath.split("/").pop() || filePath;
-        const ext = fileName.split(".").pop()?.toLowerCase() || "";
-        const fileType =
-          ext === "pdf" ? "pdf" : ext === "docx" ? "docx" : ext === "txt" ? "txt" : "unknown";
-        return { fileName, fileType, status: "active" };
-      });
-
-      return NextResponse.json({
-        success: true,
-        documents,
-        ragId,
-        timestamp: new Date().toISOString(),
-      });
-    } else {
-      return NextResponse.json(
-        { success: false, error: `Failed to get documents: ${response.status}` },
-        { status: response.status }
-      );
-    }
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Server error" },
-      { status: 500 }
-    );
-  }
-}
-
-// POST - List documents (JSON body) or Upload and train (formData)
-export async function POST(request: NextRequest) {
-  try {
-    if (!LYZR_API_KEY) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "LYZR_API_KEY not configured on server",
-        },
-        { status: 500 }
-      );
-    }
-
-    const contentType = request.headers.get("content-type") || "";
-
-    if (contentType.includes("application/json")) {
-      // List documents flow (was GET)
-      const body = await request.json();
-      const { ragId } = body;
-
-      if (!ragId) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "ragId is required",
-          },
-          { status: 400 }
-        );
-      }
-
-      const response = await fetch(
-        `${LYZR_RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`,
-        {
-          method: "GET",
-          headers: {
-            accept: "application/json",
-            "x-api-key": LYZR_API_KEY,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        // Response is array of file paths like ["storage/voicestream-dev-guide.pdf"]
-        const filePaths = Array.isArray(data)
-          ? data
-          : data.documents || data.data || [];
-
-        const documents = filePaths.map((filePath: string) => {
-          const fileName = filePath.split("/").pop() || filePath;
-          const ext = fileName.split(".").pop()?.toLowerCase() || "";
-          const fileType =
-            ext === "pdf"
-              ? "pdf"
-              : ext === "docx"
-                ? "docx"
-                : ext === "txt"
-                  ? "txt"
-                  : "unknown";
-
-          return {
-            fileName,
-            fileType,
-            status: "active",
-          };
-        });
-
-        return NextResponse.json({
-          success: true,
-          documents,
-          ragId,
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        const errorText = await response.text();
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to get documents: ${response.status}`,
-            details: errorText,
-          },
-          { status: response.status }
-        );
-      }
-    } else {
-      // Upload flow (formData)
-      const formData = await request.formData();
-      const ragId = formData.get("ragId") as string;
-      const file = formData.get("file") as File;
-
-      if (!ragId || !file) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "ragId and file are required",
-          },
-          { status: 400 }
-        );
-      }
-
-      const fileType = resolveFileType(file);
-      if (!fileType) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Unsupported file type: ${file.type || 'unknown'} (${file.name}). Supported: PDF, DOCX, TXT`,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Build the correct form data per the Lyzr RAG API spec:
-      // - PDF: file only (data_parser optional/null)
-      // - DOCX: file + data_parser="docx2txt" (REQUIRED for proper parsing)
-      // - TXT: file + data_parser="simple"
-      const trainFormData = new FormData();
-      trainFormData.append("file", file, file.name);
-
-      // Set the correct parser per file type - this is critical for DOCX
-      if (fileType === "docx") {
-        trainFormData.append("data_parser", "docx2txt");
-      } else if (fileType === "txt") {
-        trainFormData.append("data_parser", "simple");
-      }
-      // PDF: don't send data_parser (API uses its default)
-
-      const trainUrl = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(ragId)}`;
-
-      let trainResponse = await fetch(trainUrl, {
-        method: "POST",
-        headers: {
-          "x-api-key": LYZR_API_KEY,
-          accept: "application/json",
-        },
-        body: trainFormData,
-      });
-
-      // If DOCX still fails, retry without data_parser (some DOCX files work better with default)
-      if (!trainResponse.ok && fileType === "docx") {
-        const retryForm = new FormData();
-        retryForm.append("file", file, file.name);
-
-        trainResponse = await fetch(trainUrl, {
-          method: "POST",
-          headers: {
-            "x-api-key": LYZR_API_KEY,
-            accept: "application/json",
-          },
-          body: retryForm,
-        });
-      }
-
-      if (!trainResponse.ok) {
-        const errorText = await trainResponse.text();
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to process document (${fileType}). Status: ${trainResponse.status}. Please ensure the file is not corrupted.`,
-            details: errorText,
-          },
-          { status: trainResponse.status }
-        );
-      }
-
-      let trainData: Record<string, unknown> = {};
-      try {
-        trainData = await trainResponse.json();
-      } catch {
-        // Response may not be JSON, continue with empty object
-      }
-
-      // Verify the document was actually indexed by checking the document list
-      let verified = false;
-      try {
-        const verifyResponse = await fetch(
-          `${LYZR_RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`,
-          {
-            method: "GET",
-            headers: { accept: "application/json", "x-api-key": LYZR_API_KEY },
-          }
-        );
-        if (verifyResponse.ok) {
-          const verifyData = await verifyResponse.json();
-          const docs = Array.isArray(verifyData) ? verifyData : verifyData.documents || verifyData.data || [];
-          verified = docs.some((d: string) => {
-            const docName = typeof d === "string" ? d.split("/").pop() : "";
-            return docName === file.name || docName?.includes(file.name.split(".")[0]);
-          });
-        }
-      } catch {
-        // Verification failed, but upload may still have succeeded
-      }
-
-      return NextResponse.json({
-        success: true,
-        verified,
-        message: verified
-          ? "Document uploaded and indexed successfully"
-          : "Document uploaded. It may take a moment to appear in your document list.",
-        fileName: file.name,
-        fileType,
-        documentCount: trainData.document_count || trainData.chunks || 1,
-        ragId,
-        timestamp: new Date().toISOString(),
-      });
-    }
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Server error",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// PATCH - Crawl a website and add content to knowledge base
-export async function PATCH(request: NextRequest) {
-  try {
-    if (!LYZR_API_KEY) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "LYZR_API_KEY not configured on server",
-        },
-        { status: 500 }
-      );
-    }
-
-    const body = await request.json();
-    const { ragId, url } = body;
-
-    if (!ragId || !url) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "ragId and url are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    const response = await fetch(`https://api.beta.architect.new/api/v1/rag/crawl`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": LYZR_API_KEY,
-      },
-      body: JSON.stringify({ url, rag_id: ragId }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Failed to crawl website: ${response.status}`,
-          details: errorText,
-        },
-        { status: response.status }
+    if (!result.ok) {
+      return errorResponse(
+        `Failed to list documents: HTTP ${result.status}`,
+        result.status,
+        result.errorText,
       );
     }
 
     return NextResponse.json({
       success: true,
-      message:
-        "Website crawl started successfully. Content will be available shortly.",
-      url,
+      documents: result.documents,
+      documentCount: result.count,
       ragId,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Server error",
-      },
-      { status: 500 }
+  } catch (err) {
+    return errorResponse(
+      err instanceof Error ? err.message : "Internal server error in GET /api/rag",
+      500,
     );
   }
 }
 
-// DELETE - Remove documents from knowledge base
-export async function DELETE(request: NextRequest) {
+// ---------------------------------------------------------------------------
+// POST  --  List documents (JSON) or upload & train (FormData)
+// ---------------------------------------------------------------------------
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    if (!LYZR_API_KEY) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "LYZR_API_KEY not configured on server",
+    const apiKey = getApiKey();
+    if (!apiKey) return missingKeyResponse();
+
+    const contentType = request.headers.get("content-type") ?? "";
+
+    // ----- JSON body: list documents -----------------------------------
+    if (contentType.includes("application/json")) {
+      return await handleListDocuments(request, apiKey);
+    }
+
+    // ----- FormData body: upload & train -------------------------------
+    return await handleUploadAndTrain(request, apiKey);
+  } catch (err) {
+    return errorResponse(
+      err instanceof Error ? err.message : "Internal server error in POST /api/rag",
+      500,
+    );
+  }
+}
+
+/**
+ * POST with JSON body `{ ragId }` -- list documents (same semantics as
+ * GET with ?ragId).
+ */
+async function handleListDocuments(
+  request: NextRequest,
+  apiKey: string,
+): Promise<NextResponse> {
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse("Invalid JSON body", 400);
+  }
+
+  const ragId = body.ragId as string | undefined;
+  if (!ragId || typeof ragId !== "string") {
+    return errorResponse("ragId (string) is required in the JSON body", 400);
+  }
+
+  const result = await fetchDocumentList(ragId, apiKey);
+
+  if (!result.ok) {
+    return errorResponse(
+      `Failed to list documents: HTTP ${result.status}`,
+      result.status,
+      result.errorText,
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    documents: result.documents,
+    documentCount: result.count,
+    ragId,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * POST with FormData body containing `ragId` and `file` -- upload a document
+ * and train the RAG model on it.
+ *
+ * File-type routing:
+ *   PDF  -> POST /v3/train/pdf/?rag_id=...  (file only)
+ *   DOCX -> POST /v3/train/docx/?rag_id=... (try WITHOUT data_parser first;
+ *           if that fails with 4xx, retry WITH data_parser=docx2txt)
+ *   TXT  -> POST /v3/train/txt/?rag_id=...  (file + data_parser=simple)
+ *
+ * CRITICAL: We never set a Content-Type header when sending FormData -- the
+ *   runtime will set it automatically with the correct multipart boundary.
+ */
+async function handleUploadAndTrain(
+  request: NextRequest,
+  apiKey: string,
+): Promise<NextResponse> {
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return errorResponse(
+      "Expected multipart/form-data body with ragId and file fields",
+      400,
+    );
+  }
+
+  const ragId = formData.get("ragId") as string | null;
+  const file = formData.get("file") as File | null;
+
+  if (!ragId || typeof ragId !== "string") {
+    return errorResponse("ragId field is required in the form data", 400);
+  }
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return errorResponse("A non-empty file field is required in the form data", 400);
+  }
+
+  const fileType = resolveFileType(file);
+  if (!fileType) {
+    return errorResponse(
+      `Unsupported file type: MIME="${file.type || "unknown"}", name="${file.name}". Supported types: PDF, DOCX, TXT.`,
+      400,
+    );
+  }
+
+  const trainUrl = `${RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(ragId)}`;
+
+  // -------------------------------------------------------------------
+  // Build FormData for the upstream request.
+  //
+  // CRITICAL: Do NOT set Content-Type header -- let the runtime set the
+  // multipart boundary automatically.
+  // -------------------------------------------------------------------
+
+  const buildFormData = (includeParser: boolean): FormData => {
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+
+    if (includeParser) {
+      if (fileType === "docx") {
+        fd.append("data_parser", "docx2txt");
+      } else if (fileType === "txt") {
+        fd.append("data_parser", "simple");
+      }
+      // PDF: never send data_parser
+    }
+
+    return fd;
+  };
+
+  /**
+   * Execute the upload request against the Lyzr train endpoint.
+   */
+  const doUpload = async (fd: FormData): Promise<Response> => {
+    return fetch(trainUrl, {
+      method: "POST",
+      headers: {
+        // Only auth + accept; NO Content-Type -- let runtime handle boundary
+        "x-api-key": apiKey,
+        accept: "application/json",
+      },
+      body: fd,
+    });
+  };
+
+  let trainResponse: Response;
+
+  if (fileType === "docx") {
+    // ---------------------------------------------------------------
+    // DOCX strategy:
+    //   1. Try WITHOUT data_parser first (API has a default of "docx2txt").
+    //      Some servers reject an explicit value that matches their default.
+    //   2. If that fails with a 4xx error, retry WITH data_parser=docx2txt
+    //      explicitly.
+    // ---------------------------------------------------------------
+    trainResponse = await doUpload(buildFormData(false));
+
+    if (!trainResponse.ok && trainResponse.status >= 400 && trainResponse.status < 500) {
+      // Consume body so the connection is freed
+      await trainResponse.text().catch(() => {});
+      trainResponse = await doUpload(buildFormData(true));
+    }
+  } else if (fileType === "txt") {
+    // TXT always needs data_parser=simple
+    trainResponse = await doUpload(buildFormData(true));
+  } else {
+    // PDF -- no parser needed
+    trainResponse = await doUpload(buildFormData(false));
+  }
+
+  if (!trainResponse.ok) {
+    const errorText = await trainResponse.text().catch(() => "Unable to read error body");
+    return errorResponse(
+      `Failed to process ${fileType.toUpperCase()} document "${file.name}". ` +
+        `Upstream returned HTTP ${trainResponse.status}. Ensure the file is valid and not corrupted.`,
+      trainResponse.status,
+      errorText,
+    );
+  }
+
+  // Try to parse the train response body (may not always be JSON)
+  let trainData: Record<string, unknown> = {};
+  try {
+    trainData = await trainResponse.json();
+  } catch {
+    // Non-JSON response is acceptable -- continue
+  }
+
+  // -------------------------------------------------------------------
+  // Verification: wait 1 second for indexing, then check the doc list.
+  // -------------------------------------------------------------------
+  let verified = false;
+  let documentCount = 0;
+
+  try {
+    await delay(1000);
+
+    const verifyResult = await fetchDocumentList(ragId, apiKey);
+
+    if (verifyResult.ok) {
+      documentCount = verifyResult.count;
+
+      // Check whether our file appears in the list
+      const baseName = file.name.split(".")[0].toLowerCase();
+      verified = verifyResult.documents.some((doc) => {
+        const docBase = doc.fileName.toLowerCase();
+        return docBase === file.name.toLowerCase() || docBase.includes(baseName);
+      });
+    }
+  } catch {
+    // Verification is best-effort; upload may still have succeeded
+  }
+
+  return NextResponse.json({
+    success: true,
+    verified,
+    fileName: file.name,
+    fileType,
+    documentCount:
+      (trainData.document_count as number) ??
+      (trainData.chunks as number) ??
+      documentCount ??
+      1,
+    ragId,
+    message: verified
+      ? "Document uploaded and indexed successfully"
+      : "Document uploaded. It may take a moment to appear in your document list.",
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PATCH  --  Crawl a website into a knowledge base
+// ---------------------------------------------------------------------------
+
+export async function PATCH(request: NextRequest): Promise<NextResponse> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) return missingKeyResponse();
+
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Invalid JSON body", 400);
+    }
+
+    const ragId = body.ragId as string | undefined;
+    const url = body.url as string | undefined;
+
+    if (!ragId || typeof ragId !== "string") {
+      return errorResponse("ragId (string) is required", 400);
+    }
+    if (!url || typeof url !== "string") {
+      return errorResponse("url (string) is required", 400);
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      return errorResponse(`Invalid URL provided: "${url}"`, 400);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(CRAWL_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
         },
-        { status: 500 }
+        body: JSON.stringify({ url, rag_id: ragId }),
+      });
+    } catch (err) {
+      return errorResponse(
+        `Network error contacting crawl API: ${err instanceof Error ? err.message : String(err)}`,
+        502,
       );
     }
 
-    const body = await request.json();
-    const { ragId, documentNames } = body;
-
-    if (!ragId || !documentNames || !Array.isArray(documentNames)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "ragId and documentNames array are required",
-        },
-        { status: 400 }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unable to read error body");
+      return errorResponse(
+        `Failed to crawl website: HTTP ${response.status}`,
+        response.status,
+        errorText,
       );
     }
 
-    const response = await fetch(
-      `${LYZR_RAG_BASE_URL}/rag/${encodeURIComponent(ragId)}/docs/`,
-      {
+    let responseData: Record<string, unknown> = {};
+    try {
+      responseData = await response.json();
+    } catch {
+      // Non-JSON is fine
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Website crawl initiated successfully. Content will be available shortly.",
+      url,
+      ragId,
+      ...(Object.keys(responseData).length > 0 ? { data: responseData } : {}),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    return errorResponse(
+      err instanceof Error ? err.message : "Internal server error in PATCH /api/rag",
+      500,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE  --  Remove documents from a knowledge base
+// ---------------------------------------------------------------------------
+
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) return missingKeyResponse();
+
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return errorResponse("Invalid JSON body", 400);
+    }
+
+    const ragId = body.ragId as string | undefined;
+    const documentNames = body.documentNames;
+
+    if (!ragId || typeof ragId !== "string") {
+      return errorResponse("ragId (string) is required", 400);
+    }
+    if (!Array.isArray(documentNames) || documentNames.length === 0) {
+      return errorResponse(
+        "documentNames must be a non-empty array of strings",
+        400,
+      );
+    }
+
+    // Validate every entry is a non-empty string
+    for (let i = 0; i < documentNames.length; i++) {
+      if (typeof documentNames[i] !== "string" || documentNames[i].length === 0) {
+        return errorResponse(
+          `documentNames[${i}] must be a non-empty string`,
+          400,
+        );
+      }
+    }
+
+    const deleteUrl = `${RAG_BASE_URL}/rag/${encodeURIComponent(ragId)}/docs/`;
+
+    let response: Response;
+    try {
+      response = await fetch(deleteUrl, {
         method: "DELETE",
         headers: {
           accept: "application/json",
           "Content-Type": "application/json",
-          "x-api-key": LYZR_API_KEY,
+          "x-api-key": apiKey,
         },
         body: JSON.stringify(documentNames),
-      }
-    );
-
-    if (response.ok) {
-      return NextResponse.json({
-        success: true,
-        message: "Documents deleted successfully",
-        deletedCount: documentNames.length,
-        ragId,
-        timestamp: new Date().toISOString(),
       });
-    } else {
-      const errorText = await response.text();
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Failed to delete documents: ${response.status}`,
-          details: errorText,
-        },
-        { status: response.status }
+    } catch (err) {
+      return errorResponse(
+        `Network error contacting RAG API: ${err instanceof Error ? err.message : String(err)}`,
+        502,
       );
     }
-  } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Server error",
-      },
-      { status: 500 }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unable to read error body");
+      return errorResponse(
+        `Failed to delete documents: HTTP ${response.status}`,
+        response.status,
+        errorText,
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Successfully deleted ${documentNames.length} document(s)`,
+      deletedDocuments: documentNames,
+      deletedCount: documentNames.length,
+      ragId,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    return errorResponse(
+      err instanceof Error ? err.message : "Internal server error in DELETE /api/rag",
+      500,
     );
   }
 }
