@@ -126,6 +126,65 @@ interface ChatMessage {
   timestamp: string
 }
 
+// ─── localStorage Helpers ────────────────────────────────────────────────────
+
+const CHAT_STORAGE_KEY = 'learnagent_chat_history'
+const SESSION_STORAGE_KEY = 'learnagent_session_id'
+
+function loadChatHistory(): ChatMessage[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = localStorage.getItem(CHAT_STORAGE_KEY)
+    if (!stored) return []
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveChatHistory(messages: ChatMessage[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages))
+  } catch {
+    // localStorage full or unavailable — silently fail
+  }
+}
+
+function clearChatHistory() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(CHAT_STORAGE_KEY)
+  } catch {
+    // silently fail
+  }
+}
+
+function getOrCreateSessionId(): string {
+  if (typeof window === 'undefined') return 'default'
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY)
+    if (stored) return stored
+    const newId = crypto.randomUUID()
+    localStorage.setItem(SESSION_STORAGE_KEY, newId)
+    return newId
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
+function resetSessionId(): string {
+  if (typeof window === 'undefined') return 'default'
+  try {
+    const newId = crypto.randomUUID()
+    localStorage.setItem(SESSION_STORAGE_KEY, newId)
+    return newId
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parseAgentResponse(result: AIAgentResponse, fields: string[]): Record<string, any> {
@@ -475,11 +534,11 @@ function ChatTab({
   activeAgentId: string | null
   setActiveAgentId: (id: string | null) => void
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory())
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
-  const [sessionId] = useState(() => typeof window !== 'undefined' ? crypto.randomUUID() : 'default')
+  const [sessionId, setSessionId] = useState(() => getOrCreateSessionId())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Fetch uploaded documents to provide context in queries
@@ -488,6 +547,13 @@ function ChatTab({
     fetchDocs(RAG_ID)
   }, [])
 
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatHistory(messages)
+    }
+  }, [messages])
+
   const displayMessages = useSampleData && messages.length === 0 ? SAMPLE_CHAT : messages
 
   useEffect(() => {
@@ -495,6 +561,14 @@ function ChatTab({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [displayMessages])
+
+  const handleClearHistory = useCallback(() => {
+    setMessages([])
+    clearChatHistory()
+    setStatusMessage('')
+    const newSessionId = resetSessionId()
+    setSessionId(newSessionId)
+  }, [])
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim()
@@ -563,9 +637,26 @@ function ChatTab({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20">
-        <h2 className="text-xl font-bold font-serif tracking-wide">Document Q&A</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Ask questions about your uploaded documents</p>
+      <div className="px-6 py-4 border-b border-border/20 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold font-serif tracking-wide">Document Q&A</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Ask questions about your uploaded documents</p>
+        </div>
+        {messages.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{messages.length} message{messages.length !== 1 ? 's' : ''}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearHistory}
+              className="gap-1.5 text-xs"
+              disabled={loading}
+            >
+              <RotateCcw className="w-3 h-3" />
+              New Chat
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -1451,11 +1542,27 @@ function QuizTab({
 
 function DocumentsTab() {
   const { documents, loading, error, fetchDocuments } = useRAGKnowledgeBase()
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     fetchDocuments(RAG_ID)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Multi-stage refresh to handle indexing lag
+  const refreshWithRetries = useCallback(async () => {
+    setRefreshing(true)
+    await fetchDocuments(RAG_ID)
+    // Retry at intervals to catch indexing lag
+    setTimeout(async () => { await fetchDocuments(RAG_ID) }, 2000)
+    setTimeout(async () => { await fetchDocuments(RAG_ID); setRefreshing(false) }, 5000)
+  }, [fetchDocuments])
+
+  const handleManualRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await fetchDocuments(RAG_ID)
+    setRefreshing(false)
+  }, [fetchDocuments])
 
   const getFileTypeIcon = (fileType: string) => {
     switch (fileType) {
@@ -1478,17 +1585,29 @@ function DocumentsTab() {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border/20">
-        <h2 className="text-xl font-bold font-serif tracking-wide">Document Library</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Manage your knowledge base documents</p>
+      <div className="px-6 py-4 border-b border-border/20 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold font-serif tracking-wide">Document Library</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage your knowledge base documents</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleManualRefresh}
+          disabled={loading || refreshing}
+          className="gap-1.5 text-xs"
+        >
+          <RotateCcw className={cn('w-3 h-3', (loading || refreshing) && 'animate-spin')} />
+          Refresh
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         {/* Upload Zone */}
         <KnowledgeBaseUpload
           ragId={RAG_ID}
-          onUploadSuccess={() => { setTimeout(() => fetchDocuments(RAG_ID), 500) }}
-          onDeleteSuccess={() => { setTimeout(() => fetchDocuments(RAG_ID), 500) }}
+          onUploadSuccess={() => { refreshWithRetries() }}
+          onDeleteSuccess={() => { refreshWithRetries() }}
         />
 
         {/* Error */}

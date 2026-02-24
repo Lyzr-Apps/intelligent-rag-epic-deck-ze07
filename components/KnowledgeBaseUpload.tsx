@@ -80,12 +80,28 @@ export function KnowledgeBaseUpload({
       const result = await uploadDocument(ragId, file)
 
       if (result.success) {
-        setUploadProgress(`${file.name} uploaded successfully`)
+        // Check if the API verified the document was indexed
+        const verified = result.verified === true
+
+        if (verified) {
+          setUploadProgress(`${file.name} uploaded and indexed successfully`)
+        } else {
+          setUploadProgress(`${file.name} uploaded -- indexing may take a moment`)
+        }
         setUploadError(null)
+
+        // Refresh the document list with retries to wait for indexing
         await fetchDocuments(ragId)
+        // Retry after delays to catch indexing lag
+        setTimeout(async () => {
+          await fetchDocuments(ragId)
+        }, 3000)
+        setTimeout(async () => {
+          await fetchDocuments(ragId)
+        }, 7000)
+
         onUploadSuccess?.({ documentCount: result.documentCount })
-        // Clear success message after 3 seconds
-        setTimeout(() => setUploadProgress(null), 3000)
+        setTimeout(() => setUploadProgress(null), 5000)
       } else {
         setUploadProgress(null)
         setUploadError(result.error || 'Upload failed. Please try again.')
@@ -168,7 +184,7 @@ export function KnowledgeBaseUpload({
           </svg>
           <p className={cn(
             "mt-2 text-sm",
-            uploadProgress && uploadProgress.includes('successfully')
+            uploadProgress && (uploadProgress.includes('successfully') || uploadProgress.includes('indexed'))
               ? "text-green-600 font-medium"
               : uploadProgress
                 ? "text-primary font-medium"
@@ -181,12 +197,17 @@ export function KnowledgeBaseUpload({
               PDF, DOCX, TXT supported
             </p>
           )}
-          {uploadProgress && !uploadProgress.includes('successfully') && (
+          {uploadProgress && !uploadProgress.includes('successfully') && !uploadProgress.includes('indexed') && (
             <div className="mt-2 flex justify-center">
               <div className="h-1 w-32 rounded-full bg-muted overflow-hidden">
                 <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
               </div>
             </div>
+          )}
+          {uploadProgress && uploadProgress.includes('indexing may take') && (
+            <p className="mt-1 text-xs text-amber-600">
+              The document will appear in your list shortly. Try refreshing if needed.
+            </p>
           )}
         </div>
 

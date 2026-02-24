@@ -63,6 +63,7 @@ export interface GetDocumentsResponse {
 
 export interface UploadResponse {
   success: boolean
+  verified?: boolean
   message?: string
   fileName?: string
   fileType?: string

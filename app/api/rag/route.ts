@@ -227,59 +227,45 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Upload and train — try the resolved file type first, fallback on failure
-      // Do NOT send data_parser, chunk_size, chunk_overlap, or extra_info
-      const fileBytes = await file.arrayBuffer();
+      // Build the correct form data per the Lyzr RAG API spec:
+      // - PDF: file only (data_parser optional/null)
+      // - DOCX: file + data_parser="docx2txt" (REQUIRED for proper parsing)
+      // - TXT: file + data_parser="simple"
+      const trainFormData = new FormData();
+      trainFormData.append("file", file, file.name);
 
-      // Attempt 1: Upload with resolved file type
-      const attempt1Form = new FormData();
-      attempt1Form.append("file", new Blob([fileBytes], { type: file.type || "application/octet-stream" }), file.name);
+      // Set the correct parser per file type - this is critical for DOCX
+      if (fileType === "docx") {
+        trainFormData.append("data_parser", "docx2txt");
+      } else if (fileType === "txt") {
+        trainFormData.append("data_parser", "simple");
+      }
+      // PDF: don't send data_parser (API uses its default)
 
-      const attempt1Url = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(ragId)}`;
+      const trainUrl = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(ragId)}`;
 
-      let trainResponse = await fetch(attempt1Url, {
+      let trainResponse = await fetch(trainUrl, {
         method: "POST",
         headers: {
           "x-api-key": LYZR_API_KEY,
           accept: "application/json",
         },
-        body: attempt1Form,
+        body: trainFormData,
       });
 
-      // If docx/doc fails, retry as pdf (many DOCX failures are format-specific)
-      if (!trainResponse.ok && (fileType === "docx")) {
-        const attempt2Form = new FormData();
-        attempt2Form.append("file", new Blob([fileBytes], { type: "application/pdf" }), file.name.replace(/\.docx?$/i, ".pdf"));
+      // If DOCX still fails, retry without data_parser (some DOCX files work better with default)
+      if (!trainResponse.ok && fileType === "docx") {
+        const retryForm = new FormData();
+        retryForm.append("file", file, file.name);
 
-        const attempt2Url = `${LYZR_RAG_BASE_URL}/train/pdf/?rag_id=${encodeURIComponent(ragId)}`;
-
-        const retryResponse = await fetch(attempt2Url, {
+        trainResponse = await fetch(trainUrl, {
           method: "POST",
           headers: {
             "x-api-key": LYZR_API_KEY,
             accept: "application/json",
           },
-          body: attempt2Form,
+          body: retryForm,
         });
-
-        // If pdf fallback also fails, try as txt (last resort)
-        if (!retryResponse.ok) {
-          const attempt3Form = new FormData();
-          attempt3Form.append("file", new Blob([fileBytes], { type: "text/plain" }), file.name.replace(/\.docx?$/i, ".txt"));
-
-          const attempt3Url = `${LYZR_RAG_BASE_URL}/train/txt/?rag_id=${encodeURIComponent(ragId)}`;
-
-          trainResponse = await fetch(attempt3Url, {
-            method: "POST",
-            headers: {
-              "x-api-key": LYZR_API_KEY,
-              accept: "application/json",
-            },
-            body: attempt3Form,
-          });
-        } else {
-          trainResponse = retryResponse;
-        }
       }
 
       if (!trainResponse.ok) {
@@ -287,7 +273,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `Failed to process document. The file may be corrupted or in an unsupported format. Status: ${trainResponse.status}`,
+            error: `Failed to process document (${fileType}). Status: ${trainResponse.status}. Please ensure the file is not corrupted.`,
             details: errorText,
           },
           { status: trainResponse.status }
@@ -301,9 +287,34 @@ export async function POST(request: NextRequest) {
         // Response may not be JSON, continue with empty object
       }
 
+      // Verify the document was actually indexed by checking the document list
+      let verified = false;
+      try {
+        const verifyResponse = await fetch(
+          `${LYZR_RAG_BASE_URL}/rag/documents/${encodeURIComponent(ragId)}/`,
+          {
+            method: "GET",
+            headers: { accept: "application/json", "x-api-key": LYZR_API_KEY },
+          }
+        );
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          const docs = Array.isArray(verifyData) ? verifyData : verifyData.documents || verifyData.data || [];
+          verified = docs.some((d: string) => {
+            const docName = typeof d === "string" ? d.split("/").pop() : "";
+            return docName === file.name || docName?.includes(file.name.split(".")[0]);
+          });
+        }
+      } catch {
+        // Verification failed, but upload may still have succeeded
+      }
+
       return NextResponse.json({
         success: true,
-        message: "Document uploaded and trained successfully",
+        verified,
+        message: verified
+          ? "Document uploaded and indexed successfully"
+          : "Document uploaded. It may take a moment to appear in your document list.",
         fileName: file.name,
         fileType,
         documentCount: trainData.document_count || trainData.chunks || 1,
