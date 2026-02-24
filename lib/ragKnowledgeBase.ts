@@ -218,11 +218,21 @@ export function useRAGKnowledgeBase() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchDocuments = async (ragId: string) => {
+  const fetchDocuments = async (ragId: string, retries = 2) => {
     setLoading(true)
     setError(null)
 
-    const result = await getDocuments(ragId)
+    let result = await getDocuments(ragId)
+
+    // Retry on network failures (transient errors during sandbox startup)
+    if (!result.success && retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      result = await getDocuments(ragId)
+      if (!result.success && retries > 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        result = await getDocuments(ragId)
+      }
+    }
 
     if (result.success) {
       setDocuments(result.documents || [])

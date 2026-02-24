@@ -26,19 +26,22 @@ const sendErrorToParent = (
   }
 };
 
-const fetchWrapper = async (...args) => {
+const fetchWrapper = async (...args: Parameters<typeof fetch>): Promise<Response | undefined> => {
+  const requestUrl = typeof args[0] === "string" ? args[0] : (args[0] instanceof URL ? args[0].href : (args[0] as Request)?.url || "");
+  // Only send error to parent for critical agent API calls, not for RAG/upload/scheduler
+  const isCriticalEndpoint = requestUrl.includes("/api/agent") && !requestUrl.includes("/api/rag") && !requestUrl.includes("/api/upload") && !requestUrl.includes("/api/scheduler");
+
   try {
     const response = await fetch(...args);
 
     // if backend sent a redirect
     if (response.redirected) {
-      window.location.href = response.url; // update ui to go to the redirected UI (often /login)
+      window.location.href = response.url;
       return;
     }
 
     // Tool authentication required on /api/agent - notify parent to open connection wizard
     if (response.status === 401) {
-      const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
       if (requestUrl.includes("/api/agent")) {
         const contentType = response.headers.get("content-type") || "";
         if (contentType.includes("application/json")) {
@@ -74,45 +77,44 @@ const fetchWrapper = async (...args) => {
 
       if (contentType.includes("text/html")) {
         const html = await response.text();
-
-        // Replace entire current page with returned HTML
         document.open();
         document.write(html);
         document.close();
-
         return;
       } else {
-        const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-        sendErrorToParent(
-          `Backend returned 404 Not Found for ${requestUrl}`,
-          404,
-          requestUrl,
-        );
+        if (isCriticalEndpoint) {
+          sendErrorToParent(
+            `Backend returned 404 Not Found for ${requestUrl}`,
+            404,
+            requestUrl,
+          );
+        }
         return response;
       }
-    } // if backend is erroring out
-    else if (response.status >= 500) {
-      const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-      sendErrorToParent(
-        `Backend returned ${response.status} error for ${requestUrl}`,
-        response.status,
-        requestUrl,
-      );
-      // Still return the response so callers can handle it gracefully
+    } else if (response.status >= 500) {
+      if (isCriticalEndpoint) {
+        sendErrorToParent(
+          `Backend returned ${response.status} error for ${requestUrl}`,
+          response.status,
+          requestUrl,
+        );
+      }
       return response;
     }
 
     return response;
   } catch (error) {
-    // network failures
-    const requestUrl = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-    sendErrorToParent(
-      `Network error: Cannot connect to backend (${requestUrl})`,
-      undefined,
-      requestUrl,
-    );
-    // Re-throw so callers can catch and handle
-    throw error;
+    // network failures — only notify parent for critical endpoints
+    if (isCriticalEndpoint) {
+      sendErrorToParent(
+        `Network error: Cannot connect to backend (${requestUrl})`,
+        undefined,
+        requestUrl,
+      );
+    }
+    // Return undefined — callers must check for null/undefined response
+    console.error(`[FetchWrapper] Network error for ${requestUrl}:`, error);
+    return undefined;
   }
 };
 
