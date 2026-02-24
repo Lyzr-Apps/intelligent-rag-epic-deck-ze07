@@ -227,31 +227,67 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Direct upload and train in one step — send only the file
+      // Upload and train — try the resolved file type first, fallback on failure
       // Do NOT send data_parser, chunk_size, chunk_overlap, or extra_info
-      // as unsupported params cause HTTP 400 from the upstream RAG API
-      const trainFormData = new FormData();
-      trainFormData.append("file", file, file.name);
+      const fileBytes = await file.arrayBuffer();
 
-      const trainUrl = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(
-        ragId
-      )}`;
+      // Attempt 1: Upload with resolved file type
+      const attempt1Form = new FormData();
+      attempt1Form.append("file", new Blob([fileBytes], { type: file.type || "application/octet-stream" }), file.name);
 
-      const trainResponse = await fetch(trainUrl, {
+      const attempt1Url = `${LYZR_RAG_BASE_URL}/train/${fileType}/?rag_id=${encodeURIComponent(ragId)}`;
+
+      let trainResponse = await fetch(attempt1Url, {
         method: "POST",
         headers: {
           "x-api-key": LYZR_API_KEY,
           accept: "application/json",
         },
-        body: trainFormData,
+        body: attempt1Form,
       });
+
+      // If docx/doc fails, retry as pdf (many DOCX failures are format-specific)
+      if (!trainResponse.ok && (fileType === "docx")) {
+        const attempt2Form = new FormData();
+        attempt2Form.append("file", new Blob([fileBytes], { type: "application/pdf" }), file.name.replace(/\.docx?$/i, ".pdf"));
+
+        const attempt2Url = `${LYZR_RAG_BASE_URL}/train/pdf/?rag_id=${encodeURIComponent(ragId)}`;
+
+        const retryResponse = await fetch(attempt2Url, {
+          method: "POST",
+          headers: {
+            "x-api-key": LYZR_API_KEY,
+            accept: "application/json",
+          },
+          body: attempt2Form,
+        });
+
+        // If pdf fallback also fails, try as txt (last resort)
+        if (!retryResponse.ok) {
+          const attempt3Form = new FormData();
+          attempt3Form.append("file", new Blob([fileBytes], { type: "text/plain" }), file.name.replace(/\.docx?$/i, ".txt"));
+
+          const attempt3Url = `${LYZR_RAG_BASE_URL}/train/txt/?rag_id=${encodeURIComponent(ragId)}`;
+
+          trainResponse = await fetch(attempt3Url, {
+            method: "POST",
+            headers: {
+              "x-api-key": LYZR_API_KEY,
+              accept: "application/json",
+            },
+            body: attempt3Form,
+          });
+        } else {
+          trainResponse = retryResponse;
+        }
+      }
 
       if (!trainResponse.ok) {
         const errorText = await trainResponse.text();
         return NextResponse.json(
           {
             success: false,
-            error: `Failed to train document: ${trainResponse.status}`,
+            error: `Failed to process document. The file may be corrupted or in an unsupported format. Status: ${trainResponse.status}`,
             details: errorText,
           },
           { status: trainResponse.status }

@@ -482,6 +482,12 @@ function ChatTab({
   const [sessionId] = useState(() => typeof window !== 'undefined' ? crypto.randomUUID() : 'default')
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // Fetch uploaded documents to provide context in queries
+  const { documents, fetchDocuments: fetchDocs } = useRAGKnowledgeBase()
+  useEffect(() => {
+    fetchDocs(RAG_ID)
+  }, [])
+
   const displayMessages = useSampleData && messages.length === 0 ? SAMPLE_CHAT : messages
 
   useEffect(() => {
@@ -506,7 +512,16 @@ function ChatTab({
     setActiveAgentId(DOC_QA_AGENT_ID)
 
     try {
-      const result = await callAIAgent(trimmed, DOC_QA_AGENT_ID, { session_id: sessionId })
+      // Build an enhanced prompt that includes document context for better RAG retrieval
+      let enhancedMessage = trimmed
+
+      // Get current documents from the knowledge base for context
+      const docNames = documents?.map(d => d.fileName).filter(Boolean) || []
+      if (docNames.length > 0) {
+        enhancedMessage = `[AVAILABLE DOCUMENTS IN KNOWLEDGE BASE: ${docNames.join(', ')}]\n\nUser Question: ${trimmed}\n\nIMPORTANT: Only cite from documents that match what the user is asking about. If the user mentions a specific document, unit, or subject name, ONLY use content from that matching document.`
+      }
+
+      const result = await callAIAgent(enhancedMessage, DOC_QA_AGENT_ID, { session_id: sessionId })
 
       if (result.success) {
         const data = parseAgentResponse(result, ['answer', 'citations', 'confidence', 'follow_up_suggestions']) as DocQAResponse
@@ -532,7 +547,7 @@ function ChatTab({
       setLoading(false)
       setActiveAgentId(null)
     }
-  }, [input, loading, sessionId, setActiveAgentId])
+  }, [input, loading, sessionId, setActiveAgentId, documents])
 
   const handleFollowUp = (suggestion: string) => {
     setInput(suggestion)
@@ -1472,8 +1487,8 @@ function DocumentsTab() {
         {/* Upload Zone */}
         <KnowledgeBaseUpload
           ragId={RAG_ID}
-          onUploadSuccess={() => fetchDocuments(RAG_ID)}
-          onDeleteSuccess={() => fetchDocuments(RAG_ID)}
+          onUploadSuccess={() => { setTimeout(() => fetchDocuments(RAG_ID), 500) }}
+          onDeleteSuccess={() => { setTimeout(() => fetchDocuments(RAG_ID), 500) }}
         />
 
         {/* Error */}
